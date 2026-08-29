@@ -37,7 +37,8 @@ export function AssignmentBuilder({ classroomId }: { classroomId: string }) {
   const save = (publish: boolean) => startTransition(async () => { const result = await saveAssignmentAction(draft, publish); setMessage(result.message); if (result.ok) router.push(`/teacher/classes/${classroomId}/assignments`); });
 
   return <div className="space-y-6">
-    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    {pending ? <div className="fixed inset-0 z-[70] flex items-center justify-center bg-white/70 p-5 backdrop-blur-sm" aria-live="polite"><div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 font-bold text-teal-800 shadow-xl ring-1 ring-teal-100"><span className="size-5 animate-spin rounded-full border-2 border-teal-200 border-t-teal-700" />Đang lưu bài tập…</div></div> : null}
+    <section className="rounded-2xl bg-white/90 shadow-md shadow-teal-100/60 ring-1 ring-teal-100 p-6 shadow-sm">
       <div className="grid gap-5 md:grid-cols-2">
         <label className="text-sm font-semibold text-slate-700 md:col-span-2">Tên bài tập<input className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-base" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Ví dụ: Unit 2 – Practice" /></label>
         <label className="text-sm font-semibold text-slate-700 md:col-span-2">Mô tả<textarea className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 px-4 py-3" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
@@ -46,7 +47,7 @@ export function AssignmentBuilder({ classroomId }: { classroomId: string }) {
       </div>
     </section>
 
-    {draft.tasks.map((task, taskIndex) => <section key={task.clientId} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+    {draft.tasks.map((task, taskIndex) => <section key={task.clientId} className="rounded-2xl bg-white/90 shadow-md shadow-teal-100/60 ring-1 ring-teal-100 p-5 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-bold">Phần {taskIndex + 1}</h2>{draft.tasks.length > 1 && <button className="text-sm font-semibold text-rose-600" onClick={() => setDraft({ ...draft, tasks: draft.tasks.filter((t) => t.clientId !== task.clientId) })}>Xóa phần</button>}</div>
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         <input className="rounded-xl border border-slate-300 px-4 py-3" value={task.title} onChange={(e) => patchTask(task.clientId, { title: e.target.value })} placeholder="Tên phần" />
@@ -66,8 +67,8 @@ export function AssignmentBuilder({ classroomId }: { classroomId: string }) {
     <button className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold" onClick={() => setDraft({ ...draft, tasks: [...draft.tasks, newTask()] })}>+ Thêm phần bài tập</button>
     {preview && <Preview draft={draft} />}
     {message && <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">{message}</p>}
-    <div className="sticky bottom-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg backdrop-blur">
-      <span className="text-sm text-slate-500">{draft.tasks.length} phần • {questionCount} câu</span><div className="flex gap-2"><button className="rounded-xl border border-slate-300 px-4 py-3 font-semibold" onClick={() => setPreview(!preview)}>Xem trước</button><button disabled={pending} className="rounded-xl bg-slate-800 px-4 py-3 font-semibold text-white disabled:opacity-50" onClick={() => save(false)}>Lưu nháp</button><button disabled={pending} className="rounded-xl bg-teal-600 px-4 py-3 font-semibold text-white disabled:opacity-50" onClick={() => save(true)}>Giao bài</button></div>
+    <div className="sticky bottom-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/90 shadow-md shadow-teal-100/60 ring-1 ring-teal-100/95 p-4 shadow-lg backdrop-blur">
+      <span className="text-sm text-slate-500">{draft.tasks.length} phần • {questionCount} câu</span><div className="flex gap-2"><button className="rounded-xl border border-slate-300 px-4 py-3 font-semibold" onClick={() => setPreview(!preview)}>Xem trước</button><button disabled={pending} className="rounded-xl bg-teal-600 px-4 py-3 font-semibold text-white disabled:opacity-50" onClick={() => save(false)}>{pending ? "Đang lưu…" : "Lưu nháp"}</button><button disabled={pending} className="rounded-xl bg-teal-600 px-4 py-3 font-semibold text-white disabled:opacity-50" onClick={() => save(true)}>{pending ? "Đang giao…" : "Giao bài"}</button></div>
     </div>
   </div>;
 }
@@ -87,4 +88,4 @@ function QuestionEditor({ classroomId, question, number, onPatch, onDelete, onDu
   </article>;
 }
 
-function Preview({ draft }: { draft: AssignmentDraft }) { return <section className="rounded-3xl border-2 border-teal-200 bg-teal-50 p-6"><p className="text-xs font-bold text-teal-700">XEM TRƯỚC CHO HỌC SINH</p><h2 className="mt-2 text-2xl font-bold">{draft.title || "Bài tập chưa đặt tên"}</h2>{draft.tasks.map((task) => <div key={task.clientId} className="mt-5"><h3 className="font-bold">{task.title}</h3>{task.questions.map((q, i) => <div key={q.clientId} className="mt-2 rounded-xl bg-white p-4"><b>Câu {i + 1}.</b> {q.prompt || "Chưa nhập câu hỏi"}</div>)}</div>)}</section>; }
+function Preview({ draft }: { draft: AssignmentDraft }) { return <section className="rounded-2xl border-2 border-teal-200 bg-teal-50 p-6"><p className="text-xs font-bold text-teal-700">XEM TRƯỚC CHO HỌC SINH</p><h2 className="mt-2 text-2xl font-bold">{draft.title || "Bài tập chưa đặt tên"}</h2>{draft.tasks.map((task) => <div key={task.clientId} className="mt-5"><h3 className="font-bold">{task.title}</h3>{task.questions.map((q, i) => <div key={q.clientId} className="mt-2 rounded-xl bg-white p-4"><b>Câu {i + 1}.</b> {q.prompt || "Chưa nhập câu hỏi"}</div>)}</div>)}</section>; }

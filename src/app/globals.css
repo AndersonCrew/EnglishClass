@@ -44,3 +44,12 @@ table select:focus {
   border-color: #0d9488 !important;
   background: #ffffff !important;
 }
+
+.teacher-shell a.bg-teal-600,
+.teacher-shell button.bg-teal-600 {
+  box-shadow: 0 4px 10px -6px rgb(13 148 136 / 0.55);
+}
+
+.teacher-shell button:disabled {
+  cursor: wait;
+}

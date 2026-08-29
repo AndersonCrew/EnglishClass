@@ -1,0 +1,7 @@
+import Link from "next/link";
+import type { CurrentProfile } from "@/features/auth/types";
+import { LogoutButton } from "@/features/auth/components/logout-button";
+
+export function TeacherHeader({ profile }: { profile: CurrentProfile }) {
+  return <header className="relative z-20 border-b border-teal-100 bg-white px-5 py-4 shadow-sm sm:px-8"><div className="mx-auto max-w-6xl"><div className="flex items-center justify-between gap-4"><Link className="flex min-w-0 items-center gap-3" href="/teacher"><div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 text-lg font-black text-white shadow-md shadow-teal-200">E</div><div className="min-w-0"><p className="truncate font-black tracking-tight text-slate-900">EnglishClass</p><p className="truncate text-xs font-bold uppercase tracking-[0.16em] text-teal-600">Teacher space</p></div></Link><div className="flex shrink-0 items-center gap-3"><p className="hidden max-w-48 truncate text-sm font-bold text-slate-600 sm:block">{profile.fullName}</p><LogoutButton /></div></div><nav className="mt-4 flex gap-2 overflow-x-auto pb-1"><Link className="shrink-0 rounded-lg px-3 py-2 text-sm font-bold text-teal-700 hover:text-teal-900" href="/teacher">Trang chủ</Link><Link className="shrink-0 rounded-xl bg-teal-600 px-4 py-2 text-sm font-bold text-white hover:bg-teal-700" href="/teacher/classes/new">+ Tạo lớp</Link></nav></div></header>;
+}
