@@ -1,0 +1,1 @@
+export default function AdminSettingsPage(){return <main className="p-6 lg:p-10"><h1 className="text-3xl font-bold">Cài đặt</h1><div className="mt-6 max-w-2xl rounded-2xl border bg-white p-7"><p className="text-slate-600">MVP chưa có cấu hình hệ thống cần chỉnh sửa. Thông tin tạo ADMIN đầu tiên được lưu tại <strong>docs/ADMIN_SETUP.md</strong>.</p></div></main>}

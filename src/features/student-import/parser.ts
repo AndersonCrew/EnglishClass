@@ -28,7 +28,9 @@ const findColumn = (headers: string[], aliases: string[]) =>
 
 function normalizeDate(value: CellValue): { value: string | null; issue?: string } {
   if (value === null || value === undefined || String(value).trim() === "") return { value: null };
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return { value: value.toISOString().slice(0, 10) };
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return { value: `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}` };
+  }
   if (typeof value === "number") {
     const parsed = XLSX.SSF.parse_date_code(value);
     if (parsed) return { value: `${parsed.y}-${String(parsed.m).padStart(2, "0")}-${String(parsed.d).padStart(2, "0")}` };
@@ -53,7 +55,8 @@ function normalizeGender(value: CellValue, isFemaleColumn: boolean): StudentGend
 }
 
 function normalizePhone(value: CellValue) {
-  const phone = String(value ?? "").replace(/[^0-9+]/g, "");
+  let phone = String(value ?? "").replace(/[^0-9+]/g, "");
+  if (typeof value === "number" && /^\d{9}$/.test(phone)) phone = `0${phone}`;
   return phone || null;
 }
 
@@ -102,9 +105,17 @@ export function parseWorkbook(buffer: ArrayBuffer, classroomName: string): Parse
     });
     return [sheetName, parseStudentRows(rows)];
   }));
-  const normalizedClass = normalizeLabel(classroomName).replace(/ /g, "");
-  const suggestedSheet = workbook.SheetNames.find((name) => normalizeLabel(name).replace(/ /g, "") === normalizedClass)
+  const normalizedClass = normalizeLabel(classroomName)
+    .replace(/\b(lop|class)\b/g, "")
+    .replace(/ /g, "");
+  const sheetsWithStudents = workbook.SheetNames.filter((name) => studentsBySheet[name].length > 0);
+  const suggestedSheet = sheetsWithStudents.find((name) => normalizeLabel(name).replace(/ /g, "") === normalizedClass)
+    ?? sheetsWithStudents.find((name) => {
+      const normalizedSheet = normalizeLabel(name).replace(/ /g, "");
+      return normalizedClass.endsWith(normalizedSheet) || normalizedSheet.endsWith(normalizedClass);
+    })
+    ?? sheetsWithStudents[0]
     ?? workbook.SheetNames[0]
     ?? "";
-  return { sheetNames: workbook.SheetNames, suggestedSheet, studentsBySheet };
+  return { sheetNames: sheetsWithStudents, suggestedSheet, studentsBySheet };
 }

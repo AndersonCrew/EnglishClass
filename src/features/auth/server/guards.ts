@@ -16,3 +16,9 @@ export async function requireRole(requiredRole: UserRole) {
 
   return profile;
 }
+
+export async function requireApprovedTeacher() {
+  const profile = await requireRole("TEACHER");
+  if (profile.teacherApprovalStatus !== "APPROVED" || profile.accountStatus !== "ACTIVE") redirect("/account-status");
+  return profile;
+}

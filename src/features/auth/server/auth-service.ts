@@ -17,7 +17,7 @@ export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> 
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("id, full_name, role")
+    .select("id, full_name, role, teacher_approval_status, account_status")
     .eq("id", user.id)
     .single();
 
@@ -27,9 +27,11 @@ export const getCurrentProfile = cache(async (): Promise<CurrentProfile | null> 
     id: profile.id,
     fullName: profile.full_name,
     role: profile.role,
+    teacherApprovalStatus: profile.teacher_approval_status,
+    accountStatus: profile.account_status,
   };
 });
 
 export function homePathForRole(role: UserRole) {
-  return role === "TEACHER" ? "/teacher" : "/student";
+  return role === "ADMIN" ? "/admin" : role === "TEACHER" ? "/teacher" : "/student";
 }

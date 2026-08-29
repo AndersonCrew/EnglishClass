@@ -3,7 +3,7 @@ import "server-only";
 import { randomInt } from "node:crypto";
 
 import { getCurrentProfile } from "@/features/auth/server/auth-service";
-import { buildUsernameCandidate, generateTemporaryPassword } from "@/features/students/utils/account-generator";
+import { buildUsernameCandidate } from "@/features/students/utils/account-generator";
 import type { StudentCredential, StudentInput, StudentOperationResult, StudentRecord } from "@/features/students/types";
 import { createAdminClient } from "@/lib/supabase/admin.server";
 import { createClient } from "@/lib/supabase/server";
@@ -52,20 +52,36 @@ export async function createStudentAccount(classroomId: string, input: StudentIn
   const classroom = await requireOwnedClassroom(classroomId);
   const admin = createAdminClient();
   const username = await generateUniqueUsername(input.fullName, classroom.name);
-  const temporaryPassword = generateTemporaryPassword();
+  const temporaryPassword = "123456";
   const email = `${username}@${internalStudentDomain}`;
 
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
     email,
     password: temporaryPassword,
     email_confirm: true,
-    app_metadata: { role: "STUDENT", created_by: classroom.teacher_id },
-    user_metadata: { full_name: input.fullName, username },
+    app_metadata: { role: "STUDENT", created_by: String(classroom.teacher_id) },
+    user_metadata: { full_name: input.fullName, username, must_change_password: true },
   });
   if (authError || !authData.user) throw new Error("Không thể tạo tài khoản đăng nhập cho học sinh.");
 
   const studentId = authData.user.id;
   try {
+    const { error: metadataError } = await admin.auth.admin.updateUserById(studentId, {
+      app_metadata: {
+        ...authData.user.app_metadata,
+        role: "STUDENT",
+        created_by: String(classroom.teacher_id),
+      },
+    });
+    if (metadataError) throw new Error("Không thể xác nhận giáo viên tạo tài khoản học sinh.");
+
+    const { data: ownedProfile, error: ownershipError } = await admin.from("profiles").update({
+      created_by_teacher_id: classroom.teacher_id,
+    }).eq("id", studentId).eq("role", "STUDENT").select("id").maybeSingle();
+    if (ownershipError || !ownedProfile) {
+      throw new Error(`Không thể xác nhận profile STUDENT.${ownershipError ? ` ${ownershipError.message}` : " Trigger tạo profile chưa nhận diện tài khoản học sinh."}`);
+    }
+
     const supabase = await createClient();
     const { error: enrollmentError } = await supabase.rpc("finalize_student_enrollment", {
       target_classroom_id: classroomId,
@@ -76,26 +92,30 @@ export async function createStudentAccount(classroomId: string, input: StudentIn
       student_parent_phone: input.parentPhone,
       student_username: username,
     });
-    if (enrollmentError) throw enrollmentError;
-  } catch {
+    if (enrollmentError) {
+      const code = enrollmentError.code ? ` [${enrollmentError.code}]` : "";
+      throw new Error(`Không thể hoàn tất việc thêm học sinh vào lớp.${code} ${enrollmentError.message}`.trim());
+    }
+  } catch (error) {
     await admin.auth.admin.deleteUser(studentId);
-    throw new Error("Không thể hoàn tất việc thêm học sinh vào lớp.");
+    throw error instanceof Error ? error : new Error("Không thể hoàn tất việc thêm học sinh vào lớp.");
   }
 
   return { studentId, fullName: input.fullName, username, temporaryPassword };
 }
 
 export async function bulkCreateStudents(classroomId: string, students: StudentInput[]) {
-  const results: Array<StudentOperationResult & { fullName: string }> = [];
-  for (const student of students) {
+  // Fail the whole batch once when the server-only Admin API is not configured,
+  // instead of returning the same configuration error for every spreadsheet row.
+  createAdminClient();
+  return Promise.all(students.map(async (student): Promise<StudentOperationResult & { fullName: string }> => {
     try {
       const credential = await createStudentAccount(classroomId, student);
-      results.push({ success: true, message: "Đã tạo", credential, fullName: student.fullName });
+      return { success: true, message: "Đã tạo", credential, fullName: student.fullName };
     } catch (error) {
-      results.push({ success: false, message: error instanceof Error ? error.message : "Tạo thất bại", fullName: student.fullName });
+      return { success: false, message: error instanceof Error ? error.message : "Tạo thất bại", fullName: student.fullName };
     }
-  }
-  return results;
+  }));
 }
 
 export async function updateStudent(classroomId: string, studentId: string, input: StudentInput) {
@@ -110,37 +130,51 @@ export async function updateStudent(classroomId: string, studentId: string, inpu
   if (error) throw new Error("Không thể cập nhật thông tin học sinh.");
 }
 
-export async function removeStudentFromClass(classroomId: string, studentId: string) {
+export async function withdrawStudentFromClass(classroomId: string, studentId: string) {
   await requireStudentMembership(classroomId, studentId);
   const supabase = await createClient();
-  const { error } = await supabase.from("class_members").delete()
+  const { error } = await supabase.from("class_members").update({ status: "WITHDRAWN", left_at: new Date().toISOString() })
     .eq("classroom_id", classroomId).eq("student_id", studentId);
-  if (error) throw new Error("Không thể xoá học sinh khỏi lớp.");
+  if (error) throw new Error("Không thể chuyển học sinh sang trạng thái đã thôi học.");
 }
 
 export async function resetStudentPassword(classroomId: string, studentId: string) {
   await requireStudentMembership(classroomId, studentId);
-  const password = generateTemporaryPassword();
+  const password = "123456";
   const admin = createAdminClient();
-  const { error } = await admin.auth.admin.updateUserById(studentId, { password });
-  if (error) throw new Error("Không thể đặt lại mật khẩu.");
+  const { data, error } = await admin.auth.admin.getUserById(studentId);
+  if (error || !data.user) throw new Error("Không tìm thấy tài khoản học sinh.");
+  const { error: updateError } = await admin.auth.admin.updateUserById(studentId, {
+    password,
+    user_metadata: { ...data.user.user_metadata, must_change_password: true },
+  });
+  if (updateError) throw new Error("Không thể đặt lại mật khẩu.");
   return password;
 }
 
-export async function getClassroomStudents(classroomId: string): Promise<{ classroom: { id: string; name: string; gradeLevel: number; academicYear: string }; students: StudentRecord[] } | null> {
+export async function getClassroomStudents(classroomId: string): Promise<{ classroom: { id: string; name: string; gradeLevel: number; academicYear: string; endsAt: string | null }; students: StudentRecord[] } | null> {
   await requireOwnedClassroom(classroomId);
   const supabase = await createClient();
   const { data: classroom } = await supabase.from("classrooms")
-    .select("id, name, grade_level, academic_year").eq("id", classroomId).maybeSingle();
+    .select("id, name, grade_level, academic_year, ends_at").eq("id", classroomId).maybeSingle();
   if (!classroom) return null;
-  const { data: members } = await supabase.from("class_members").select("student_id").eq("classroom_id", classroomId);
+  const { data: members } = await supabase.from("class_members").select("student_id, status, left_at").eq("classroom_id", classroomId);
   const ids = (members ?? []).map((member) => member.student_id);
-  if (!ids.length) return { classroom: { id: classroom.id, name: classroom.name, gradeLevel: classroom.grade_level, academicYear: classroom.academic_year }, students: [] };
+  const classroomData = { id: classroom.id, name: classroom.name, gradeLevel: classroom.grade_level, academicYear: classroom.academic_year, endsAt: classroom.ends_at };
+  if (!ids.length) return { classroom: classroomData, students: [] };
   const { data: profiles } = await supabase.from("profiles")
     .select("id, full_name, date_of_birth, gender, parent_phone, username").in("id", ids).order("full_name");
-  const students = (profiles ?? []).flatMap((profile) => profile.username ? [{
+  const membershipByStudent = new Map((members ?? []).map((member) => [member.student_id, member]));
+  const isExpired = classroom.ends_at !== null && classroom.ends_at < new Date().toISOString().slice(0, 10);
+  const students = (profiles ?? []).flatMap((profile) => profile.username ? (() => {
+    const membership = membershipByStudent.get(profile.id);
+    if (!membership) return [];
+    return [{
     id: profile.id, fullName: profile.full_name, dateOfBirth: profile.date_of_birth,
     gender: profile.gender, parentPhone: profile.parent_phone, username: profile.username,
-  }] : []);
-  return { classroom: { id: classroom.id, name: classroom.name, gradeLevel: classroom.grade_level, academicYear: classroom.academic_year }, students };
+    membershipStatus: membership.status, leftAt: membership.left_at,
+    displayStatus: membership.status === "WITHDRAWN" ? "WITHDRAWN" as const : isExpired ? "EXPIRED" as const : "ACTIVE" as const,
+  }];
+  })() : []);
+  return { classroom: classroomData, students };
 }

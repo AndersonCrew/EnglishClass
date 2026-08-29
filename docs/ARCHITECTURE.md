@@ -6,8 +6,9 @@ EnglishClass hỗ trợ một quy trình duy nhất, xuyên suốt:
 
 > Giáo viên giao nhiệm vụ → học sinh thực hiện và nộp bài → giáo viên đánh giá → giáo viên/học sinh theo dõi tiến bộ.
 
-Hai vai trò trong MVP:
+Ba vai trò trong MVP:
 
+- `ADMIN`: quản trị vận hành, phê duyệt/khóa tài khoản, giám sát dữ liệu và audit; không chấm bài thay teacher.
 - `TEACHER`: tạo và quản lý lớp; thêm/import học sinh; giao bài; theo dõi trạng thái; chấm và nhận xét.
 - `STUDENT`: đăng nhập; xem bài được giao; làm/nộp bài; xem kết quả và nhận xét của chính mình.
 
@@ -60,7 +61,9 @@ Tất cả khóa chính dùng `uuid`; thời gian dùng `timestamptz`; tên bả
 ### 3.1 Enum
 
 ```sql
-create type user_role as enum ('TEACHER', 'STUDENT');
+create type user_role as enum ('ADMIN', 'TEACHER', 'STUDENT');
+create type teacher_approval_status as enum ('PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED');
+create type account_status as enum ('ACTIVE', 'SUSPENDED');
 create type skill_type as enum ('LISTENING', 'SPEAKING', 'READING', 'WRITING');
 create type assignment_status as enum ('DRAFT', 'PUBLISHED', 'CLOSED');
 create type submission_status as enum ('DRAFT', 'SUBMITTED', 'RETURNED');
@@ -77,10 +80,18 @@ Enum trạng thái nên giữ nhỏ. Trạng thái hoàn thành assignment đư�
 - `full_name text not null`
 - `date_of_birth date null`, `gender student_gender null`, `parent_phone text null` — chỉ dùng cho student
 - `username text null unique` — username đăng nhập ổn định, không tự đổi khi sửa tên
+- `teacher_approval_status teacher_approval_status null` — chỉ dùng cho teacher
+- `account_status account_status not null default 'ACTIVE'`
 - `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
 
 Không lưu mật khẩu trong `profiles`. Mật khẩu chỉ do Supabase Auth quản lý.
+
+Teacher đăng ký công khai mặc định `PENDING`; chỉ teacher `APPROVED` và account `ACTIVE` được vào dashboard. ADMIN không đăng ký công khai và được bootstrap thủ công theo `docs/ADMIN_SETUP.md`. Role không nằm trong danh sách cột được client phép update.
+
+#### `audit_logs`
+
+Lưu actor, role tại thời điểm hành động, action, target và metadata không nhạy cảm. Chỉ ADMIN được đọc. Mật khẩu tạm, service key và credential không bao giờ được ghi vào metadata.
 
 Đăng ký công khai trong MVP chỉ dành cho teacher. Trigger `on_auth_user_created` tự tạo `profiles`: role mặc định là `TEACHER`; luồng admin tạo student phải đặt `raw_app_meta_data.role = STUDENT`. Frontend không gửi và không quyết định role. `raw_user_meta_data.full_name` chỉ dùng làm tên hiển thị, không dùng để authorization.
 
@@ -93,6 +104,7 @@ Student dùng username trên UI; server ánh xạ username sang synthetic intern
 - `name text not null`
 - `grade_level smallint not null check (grade_level between 1 and 5)`
 - `academic_year text not null`
+- `ends_at date null` — ngày kết thúc để suy ra trạng thái `Đã hết hạn`
 - `created_at`, `updated_at`
 
 Index: `(teacher_id)`. Constraint/trigger đảm bảo `teacher_id` là profile có role `TEACHER`.
@@ -102,9 +114,11 @@ Index: `(teacher_id)`. Constraint/trigger đảm bảo `teacher_id` là profile 
 - `classroom_id uuid references classrooms(id) on delete cascade`
 - `student_id uuid references profiles(id) on delete cascade`
 - `created_at timestamptz not null default now()`
+- `status class_member_status not null default 'ACTIVE'` (`ACTIVE | WITHDRAWN`)
+- `left_at timestamptz null`
 - `primary key (classroom_id, student_id)`
 
-Constraint/trigger đảm bảo thành viên có role `STUDENT`. Khóa kép ngăn thêm trùng.
+Constraint/trigger đảm bảo thành viên có role `STUDENT`. Khóa kép ngăn thêm trùng. Không xóa membership khi học sinh thôi học; chuyển sang `WITHDRAWN` để giữ lịch sử. `Đã hết hạn` là trạng thái suy ra khi `classrooms.ends_at` đã qua.
 
 #### `assignments`
 
@@ -194,7 +208,7 @@ Bật RLS trên tất cả bảng trong `public`. Các policy dùng `auth.uid()`
 |---|---|---|
 | `profiles` | đọc/sửa profile mình; đọc student trong lớp mình | đọc/sửa giới hạn profile mình; đọc teacher của lớp mình khi UI cần |
 | `classrooms` | CRUD lớp có `teacher_id = auth.uid()` | chỉ đọc lớp mình có membership |
-| `class_members` | đọc/xóa thành viên của lớp mình; thêm qua trusted server import/enrolment flow | chỉ đọc membership của chính mình |
+| `class_members` | đọc/cập nhật trạng thái thành viên của lớp mình; thêm qua trusted server import/enrolment flow | chỉ đọc membership của chính mình |
 | `assignments` | CRUD assignment thuộc lớp mình | đọc assignment `PUBLISHED/CLOSED` của lớp mình |
 | `tasks` | CRUD task của assignment thuộc lớp mình | đọc task thuộc assignment đã publish trong lớp mình |
 | `submissions` | đọc submission thuộc lớp mình; không giả danh student để tạo | CRUD submission của chính mình cho task hợp lệ; không sửa sau khi bị khóa theo rule MVP |
@@ -257,6 +271,30 @@ Client truy cập bằng signed URL thời hạn ngắn sau khi server/RLS xác 
 ├── middleware.ts
 └── package.json
 ```
+
+### 6.1 Question Engine (MVP)
+
+Question Engine mở rộng luồng thành `Assignment → Task → Question → Submission → Student Answer`.
+`Task.skill` vẫn chỉ gồm bốn kỹ năng; `tasks.category` là nhãn tùy chọn như
+Vocabulary, không phải một kỹ năng thứ năm.
+
+- `questions` chứa nội dung an toàn để hiển thị, cấu hình lựa chọn và đường dẫn ảnh.
+- `question_answer_keys` chứa đáp án đúng và không có policy đọc cho student.
+- `submissions` đại diện một lần làm bài cho toàn assignment. Các cột task/text/file cũ
+  được giữ nullable để migration tương thích dữ liệu cũ, nhưng Question Engine không ghi vào chúng.
+- `student_answers` lưu JSON theo từng dạng câu hỏi và điểm tự động/thủ công.
+- Năm dạng `MULTIPLE_CHOICE`, `TRUE_FALSE`, `FILL_BLANK`, `MATCHING`, `ORDERING`
+  được chấm trong hàm PostgreSQL `submit_assignment`; `TEXT_INPUT` để giáo viên chấm.
+
+Student chỉ lưu và nộp qua RPC `security definer`. RPC tự lấy `auth.uid()`, kiểm tra
+membership, trạng thái assignment/submission và quan hệ question; frontend không được gửi
+`student_id`, điểm hoặc role. Answer key không được join vào query student và không được cấp
+quyền `SELECT` qua RLS.
+
+Ảnh câu hỏi nằm trong private bucket `question-media`, tối đa 5 MB, chỉ nhận JPEG/PNG/WebP.
+Path bắt đầu bằng `classroom_id`; teacher sở hữu lớp được ghi/xóa, thành viên lớp chỉ được đọc.
+Ứng dụng tạo signed URL thời hạn ngắn để hiển thị. MVP chưa hỗ trợ PDF import, OCR, AI sinh bài,
+ngân hàng câu hỏi hay cộng tác nhiều giáo viên.
 
 Mỗi feature chỉ tạo các thư mục thực sự cần, thường gồm:
 
@@ -355,10 +393,11 @@ Chỉ bắt đầu phase tiếp theo khi mốc kiểm chứng của phase hiện
 9. **XSS và file content:** render nội dung người dùng như text mặc định; nếu sau này hỗ trợ rich text phải sanitize. Không phục vụ file upload dưới dạng thực thi.
 10. **Rate/abuse limits:** giới hạn đăng nhập, import và upload ở mức phù hợp; xử lý lỗi Supabase/Vercel rõ ràng. Free tier có quota nên tránh polling và truy vấn N+1.
 11. **Data minimization:** chỉ thu thập dữ liệu cần cho học tập; xác định quy trình xóa học sinh/lớp và retention trước khi dùng thật tại trường.
-12. **Audit tối thiểu:** `created_at`, `updated_at`, actor trên assessment; chưa cần hệ thống event/audit phức tạp trong MVP.
+12. **Audit quản trị:** mọi thao tác đặc quyền của ADMIN ghi `audit_logs`; không ghi password, secret hoặc credential.
 13. **Secrets và môi trường:** tách development/production, không commit `.env*`, xoay key nếu lộ và giới hạn preview deployment truy cập dữ liệu thật.
 14. **Concurrency/integrity:** unique constraints ngăn submission/membership trùng; mutation nhiều bước dùng transaction/RPC khi nằm hoàn toàn trong PostgreSQL.
 15. **Enrollment escalation:** không cấp `INSERT` trực tiếp trên `class_members` cho authenticated client. Nếu không, teacher biết UUID có thể tự gắn một student bất kỳ vào lớp rồi mở rộng quyền đọc. Thêm/import thành viên phải qua trusted server flow, xác thực teacher sở hữu lớp và nguồn student hợp lệ.
+16. **Hard delete student:** chỉ ADMIN qua server-only action. Nếu student có submission, MVP từ chối hard delete để giữ lịch sử; dùng suspend thay thế. Khi chưa có submission, xóa Auth user làm cascade profile/membership theo FK, sau đó ghi audit không chứa credential.
 
 ## 11. Testing tối thiểu
 

@@ -37,7 +37,7 @@ export async function loginAction(
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, teacher_approval_status, account_status")
     .eq("id", data.user.id)
     .single();
 
@@ -48,6 +48,13 @@ export async function loginAction(
     };
   }
 
+  if (profile.role === "STUDENT" && data.user.user_metadata.must_change_password === true) {
+    redirect("/change-password");
+  }
+  if (profile.role === "TEACHER" && (profile.teacher_approval_status !== "APPROVED" || profile.account_status !== "ACTIVE")) {
+    redirect("/account-status");
+  }
+  if (profile.account_status === "SUSPENDED") redirect("/account-status");
   redirect(homePathForRole(profile.role));
 }
 

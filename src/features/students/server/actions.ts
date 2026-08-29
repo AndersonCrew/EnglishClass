@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { bulkStudentSchema, studentInputSchema } from "@/features/students/schemas/student-schema";
-import { bulkCreateStudents, createStudentAccount, removeStudentFromClass, resetStudentPassword, updateStudent } from "@/features/students/server/student-service";
+import { bulkCreateStudents, createStudentAccount, resetStudentPassword, updateStudent, withdrawStudentFromClass } from "@/features/students/server/student-service";
 import type { StudentInput } from "@/features/students/types";
 
 const pathFor = (classroomId: string) => `/teacher/classes/${classroomId}`;
@@ -36,8 +36,8 @@ export async function updateStudentAction(classroomId: string, studentId: string
   catch (error) { return { success: false as const, message: message(error) }; }
 }
 
-export async function removeStudentAction(classroomId: string, studentId: string) {
-  try { await removeStudentFromClass(classroomId, studentId); revalidatePath(pathFor(classroomId)); return { success: true as const }; }
+export async function withdrawStudentAction(classroomId: string, studentId: string) {
+  try { await withdrawStudentFromClass(classroomId, studentId); revalidatePath(pathFor(classroomId)); return { success: true as const }; }
   catch (error) { return { success: false as const, message: message(error) }; }
 }
 

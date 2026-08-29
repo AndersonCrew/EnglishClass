@@ -1,4 +1,4 @@
-import type { StudentGender } from "@/types/database.generated";
+import type { ClassMemberStatus, StudentGender } from "@/types/database.generated";
 
 export interface StudentInput {
   fullName: string;
@@ -10,6 +10,9 @@ export interface StudentInput {
 export interface StudentRecord extends StudentInput {
   id: string;
   username: string;
+  membershipStatus: ClassMemberStatus;
+  leftAt: string | null;
+  displayStatus: "ACTIVE" | "WITHDRAWN" | "EXPIRED";
 }
 
 export interface StudentCredential {
