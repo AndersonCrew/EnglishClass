@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { getCurrentProfile, homePathForRole } from "@/features/auth/server/auth-service";
 
@@ -17,6 +18,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const { registered } = await searchParams;
   const profile = await getCurrentProfile();
   const dashboardPath = profile ? homePathForRole(profile.role) : null;
+  if (dashboardPath) redirect(dashboardPath);
   const registrationMessage =
     registered === "confirm"
       ? "Tạo tài khoản thành công. Hãy kiểm tra email xác nhận rồi đăng nhập."

@@ -9,82 +9,17 @@ import { assignmentDraftSchema } from "../schemas/assignment-schema";
 import type { ActionResult } from "../types";
 import { getGrade3LearningPath } from "../grade3-curriculum";
 
-async function persistAssignment(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  draft: ReturnType<typeof assignmentDraftSchema.parse>,
-  options: { publish: boolean; sequenceIndex: number; curriculumCode?: string },
-): Promise<ActionResult> {
-  const { data: assignment, error } = await supabase.from("assignments").insert({
-    classroom_id: draft.classroomId, title: draft.title, description: draft.description || null,
-    due_at: draft.dueAt ? new Date(draft.dueAt).toISOString() : null,
-    status: "DRAFT", show_results_after_submit: draft.showResultsAfterSubmit,
-    level: draft.level, sequence_index: options.sequenceIndex,
-    curriculum_code: options.curriculumCode ?? null,
-  }).select("id").single();
-  if (error || !assignment) {
-    console.error("[assignment-provision] assignment", error);
-    return { ok: false, message: `Không thể tạo assignment${error?.code ? ` [${error.code}]` : ""}.` };
-  }
-
-  try {
-    const { data: createdTasks, error: taskError } = await supabase.from("tasks").insert(draft.tasks.map((task, taskIndex) => ({
-        assignment_id: assignment.id, skill: task.skill, title: task.title,
-        instruction: task.instruction || null, category: task.category || null,
-        content: {}, order_index: taskIndex,
-      }))).select("id,order_index");
-    if (taskError || !createdTasks || createdTasks.length !== draft.tasks.length) throw new Error(`task:${taskError?.code ?? "missing"}:${taskError?.message ?? "no rows"}`);
-    const taskIdByIndex = new Map(createdTasks.map((task) => [task.order_index, task.id]));
-    const questionRows = draft.tasks.flatMap((task, taskIndex) => task.questions.map((question, questionIndex) => ({
-          task_id: taskIdByIndex.get(taskIndex)!, type: question.type, prompt: question.prompt,
-          instruction: question.instruction || null, image_path: question.imagePath, config: question.config,
-          points: question.points, order_index: questionIndex,
-    })));
-    const { data: createdQuestions, error: questionError } = await supabase.from("questions").insert(questionRows).select("id,task_id,order_index");
-    if (questionError || !createdQuestions || createdQuestions.length !== questionRows.length) throw new Error(`question:${questionError?.code ?? "missing"}:${questionError?.message ?? "no rows"}`);
-    const keys = createdQuestions.map((createdQuestion) => {
-      const taskIndex = createdTasks.find((task) => task.id === createdQuestion.task_id)?.order_index;
-      if (taskIndex === undefined) throw new Error("question-task");
-      return { question_id: createdQuestion.id, answer_key: draft.tasks[taskIndex].questions[createdQuestion.order_index].answerKey };
-    });
-    const { error: keyError } = await supabase.from("question_answer_keys").insert(keys);
-    if (keyError) throw new Error(`answer-key:${keyError.code}:${keyError.message}`);
-    if (options.publish) {
-      const { error: publicationError } = await supabase.rpc("set_assignment_publication", {
-        target_assignment_id: assignment.id, target_status: "PUBLISHED",
-      });
-      if (publicationError) throw new Error(`publication:${publicationError.code}:${publicationError.message}`);
-    }
-  } catch (caught) {
-    console.error("[assignment-provision] children", caught);
-    await supabase.from("assignments").delete().eq("id", assignment.id);
-    const detail = caught instanceof Error ? caught.message : "unknown";
-    return { ok: false, message: `Bài tập chưa được lưu trọn vẹn [${detail}].` };
-  }
-  return { ok: true, message: options.publish ? "Đã mở bài cho học sinh." : "Đã lưu bản nháp.", assignmentId: assignment.id };
-}
-
 export async function saveAssignmentAction(payload: unknown, publish: boolean): Promise<ActionResult> {
   await requireRole("TEACHER");
-  if (publish) return { ok: false, message: "Hãy lưu bản nháp, sau đó mở bài và chọn thời gian tự đóng ở danh sách bài tập." };
-  const parsed = assignmentDraftSchema.safeParse(payload);
-  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Dữ liệu chưa hợp lệ." };
-
-  const supabase = await createClient();
-  const draft = parsed.data;
-  const { data: classroom } = await supabase.from("classrooms").select("id").eq("id", draft.classroomId).maybeSingle();
-  if (!classroom) return { ok: false, message: "Bạn không có quyền tạo bài cho lớp này." };
-  const { data: last } = await supabase.from("assignments").select("sequence_index").eq("classroom_id", draft.classroomId).order("sequence_index", { ascending: false }).limit(1).maybeSingle();
-  const result = await persistAssignment(supabase, draft, { publish, sequenceIndex: (last?.sequence_index ?? 0) + 1 });
-
-  revalidatePath(`/teacher/classes/${draft.classroomId}/assignments`);
-  revalidatePath("/student");
-  return result;
+  void payload;
+  void publish;
+  return { ok: false, message: "Bài tập được chuẩn bị sẵn theo khối. Giáo viên chỉ cần chọn bài và mở cho lớp." };
 }
 
 export async function openAssignmentUntilAction(assignmentId: string, classroomId: string, closesAt: string): Promise<ActionResult> {
   await requireRole("TEACHER");
   const closeTime = new Date(closesAt);
-  if (!closesAt || Number.isNaN(closeTime.getTime()) || closeTime.getTime() <= Date.now() + 5 * 60 * 1000) return { ok: false, message: "Thời gian đóng phải sau hiện tại ít nhất 5 phút." };
+  if (!closesAt || Number.isNaN(closeTime.getTime()) || closeTime.getTime() < Date.now() + 24 * 60 * 60 * 1000) return { ok: false, message: "Thời gian kết thúc phải cách thời gian mở bài ít nhất 24 giờ." };
   const supabase = await createClient();
   const { error } = await supabase.rpc("open_assignment_until", { target_assignment_id: assignmentId, close_time: closeTime.toISOString() });
   if (error) return { ok: false, message: `Không thể mở bài [${error.code}]. Hãy kiểm tra bài đã có đủ 4 kỹ năng.` };
@@ -198,7 +133,7 @@ export async function submitAssignmentAction(submissionId: string): Promise<Acti
 
 export async function assessAnswerAction(answerId: string, score: number, feedback: string): Promise<ActionResult> {
   await requireRole("TEACHER");
-  if (!Number.isFinite(score) || score < 0 || score > 1000 || feedback.length > 2000) return { ok: false, message: "Điểm hoặc nhận xét chưa hợp lệ." };
+  if (!Number.isFinite(score) || score < 0 || score > 10 || feedback.length > 2000) return { ok: false, message: "Điểm phải nằm trong khoảng từ 0 đến 10." };
   const supabase = await createClient();
   const { error } = await supabase.rpc("assess_student_answer", { target_answer_id: answerId, score_value: score, feedback_value: feedback });
   return error ? { ok: false, message: "Không thể lưu đánh giá." } : { ok: true, message: "Đã lưu đánh giá." };
