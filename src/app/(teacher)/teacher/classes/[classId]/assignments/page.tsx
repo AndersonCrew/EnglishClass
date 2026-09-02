@@ -22,7 +22,6 @@ export default async function AssignmentsPage({ params }: { params: Promise<{ cl
         <h1 className="mt-2 text-3xl font-bold">Bài tập khối {data.classroom.grade_level}</h1>
         <p className="mt-2 text-slate-500">Chọn bài đang khóa để mở cho lớp. Chọn bài đang mở để xem chi tiết.</p>
       </div>
-      <Link href={`/teacher/classes/${classId}/assignments/new`} className="rounded-xl border border-teal-200 bg-white px-5 py-3 font-bold text-teal-700">+ Tạo bài riêng</Link>
     </div>
 
     <Grade3PathBootstrap classroomId={classId} enabled={data.classroom.grade_level === 3 && data.assignments.filter((item) => item.curriculum_code?.startsWith("G3-")).length < 12} />

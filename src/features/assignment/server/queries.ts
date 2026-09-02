@@ -13,7 +13,7 @@ export async function getTeacherAssignments(classroomId: string) {
   if (!classroom) return null;
   const assignmentIds = (assignments ?? []).map((item) => item.id);
   const [{ data: submissions }, { count: studentCount }] = await Promise.all([
-    assignmentIds.length ? supabase.from("submissions").select("assignment_id,status,assessed_at").in("assignment_id", assignmentIds) : Promise.resolve({ data: [] }),
+    assignmentIds.length ? supabase.from("submissions").select("id,assignment_id,student_id,status,submitted_at,assessed_at").in("assignment_id", assignmentIds) : Promise.resolve({ data: [] }),
     supabase.from("class_members").select("student_id", { count: "exact", head: true }).eq("classroom_id", classroomId).eq("status", "ACTIVE"),
   ]);
   const progress = new Map<string, { started: number; submitted: number; graded: number }>();
@@ -24,13 +24,42 @@ export async function getTeacherAssignments(classroomId: string) {
     if (item.assessed_at) value.graded += 1;
     progress.set(item.assignment_id, value);
   }
-  return { classroom, assignments: assignments ?? [], progress, studentCount: studentCount ?? 0, serverNow: new Date().toISOString() };
+  const pending = (submissions ?? []).filter((item) => item.status === "SUBMITTED" && !item.assessed_at);
+  const pendingStudentIds = [...new Set(pending.map((item) => item.student_id))];
+  const { data: pendingStudents } = pendingStudentIds.length
+    ? await supabase.from("profiles").select("id,full_name").in("id", pendingStudentIds)
+    : { data: [] };
+  const studentNames = new Map((pendingStudents ?? []).map((item) => [item.id, item.full_name]));
+  const assignmentTitles = new Map((assignments ?? []).map((item) => [item.id, item.title]));
+  const pendingSubmissions = pending.map((item) => ({
+    id: item.id,
+    assignmentId: item.assignment_id,
+    assignmentTitle: assignmentTitles.get(item.assignment_id) ?? "Bài tập",
+    studentName: studentNames.get(item.student_id) ?? "Học sinh",
+    submittedAt: item.submitted_at,
+  }));
+  return { classroom, assignments: assignments ?? [], progress, pendingSubmissions, studentCount: studentCount ?? 0, serverNow: new Date().toISOString() };
 }
 
 export async function getStudentAssignments() {
   const profile = await requireRole("STUDENT");
   const supabase = await createClient();
-  const { data } = await supabase.from("assignments").select("id,title,description,due_at,status,classroom_id,created_at,level,sequence_index,cover_image_path,closes_at").eq("status", "PUBLISHED").gt("closes_at", new Date().toISOString()).order("level", { ascending: true }).order("sequence_index", { ascending: true, nullsFirst: false });
+  const { data: memberships, error: membershipError } = await supabase
+    .from("class_members")
+    .select("classroom_id")
+    .eq("student_id", profile.id)
+    .eq("status", "ACTIVE");
+  if (membershipError) throw new Error(`Không thể tải lớp học [${membershipError.code}].`);
+  const classroomIds = (memberships ?? []).map((item) => item.classroom_id);
+  if (!classroomIds.length) return [];
+  const { data, error: assignmentError } = await supabase.from("assignments")
+    .select("id,title,description,due_at,status,classroom_id,created_at,level,sequence_index,cover_image_path,closes_at")
+    .in("classroom_id", classroomIds)
+    .eq("status", "PUBLISHED")
+    .gt("closes_at", new Date().toISOString())
+    .order("level", { ascending: true })
+    .order("sequence_index", { ascending: true, nullsFirst: false });
+  if (assignmentError) throw new Error(`Không thể tải bài tập [${assignmentError.code}].`);
   const ids = (data ?? []).map((item) => item.id);
   const { data: submissions } = ids.length ? await supabase.from("submissions").select("assignment_id,status,assessed_at,auto_score,teacher_score").eq("student_id", profile.id).in("assignment_id", ids) : { data: [] };
   const submissionMap = new Map((submissions ?? []).map((item) => [item.assignment_id, item]));
