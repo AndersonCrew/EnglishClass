@@ -3,13 +3,12 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
 
-export type ClassTab = "overview" | "assignments" | "students" | "add-students" | "ranking";
+export type ClassTab = "overview" | "assignments" | "students" | "ranking";
 
 const tabs: Array<{ key: ClassTab; label: string }> = [
   { key: "overview", label: "Tổng quan" },
   { key: "assignments", label: "Bài tập" },
   { key: "students", label: "Danh sách học sinh" },
-  { key: "add-students", label: "Thêm học sinh" },
   { key: "ranking", label: "Bảng xếp hạng" },
 ];
 

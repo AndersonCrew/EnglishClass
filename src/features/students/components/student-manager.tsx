@@ -29,6 +29,7 @@ function CredentialCard({ credential }: { credential: StudentCredential }) {
 }
 
 export function StudentManager({ classroomId, classroomName, initialStudents, focus = "manage" }: Props) {
+  const [section, setSection] = useState<"manage" | "add">(focus);
   const [mode, setMode] = useState<Mode>(focus === "add" ? "choice" : "closed");
   const [search, setSearch] = useState("");
   const [manual, setManual] = useState<StudentInput>(blankStudent);
@@ -160,19 +161,19 @@ export function StudentManager({ classroomId, classroomName, initialStudents, fo
   return <section className="rounded-2xl bg-white/90 p-5 shadow-lg shadow-teal-100/60 ring-1 ring-teal-100 sm:p-7">
     {isPending ? <div className="fixed inset-0 z-[70] flex items-center justify-center bg-white/70 p-5 backdrop-blur-sm" aria-live="polite"><div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 font-bold text-teal-800 shadow-xl ring-1 ring-teal-100"><span className="size-5 animate-spin rounded-full border-2 border-teal-200 border-t-teal-700" />Đang xử lý…</div></div> : null}
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-      <div><h2 className="text-2xl font-bold">{focus === "add" ? "Thêm học sinh" : "Danh sách học sinh"}</h2><p className="mt-1 text-slate-500">{focus === "add" ? "Tạo một tài khoản hoặc import nhiều học sinh từ Excel." : `${initialStudents.length} học sinh trong lớp`}</p></div>
-      {focus === "add" && mode !== "choice" ? <button className="rounded-xl border border-teal-200 bg-teal-50 px-5 py-3 font-semibold text-teal-800 hover:bg-teal-100" onClick={() => setMode("choice")} type="button">Chọn cách khác</button> : null}
+      <div><h2 className="text-2xl font-bold">{section === "add" ? "Thêm học sinh" : "Danh sách học sinh"}</h2><p className="mt-1 text-slate-500">{section === "add" ? "Tạo một tài khoản hoặc import nhiều học sinh từ Excel." : `${initialStudents.length} học sinh trong lớp`}</p></div>
+      <div className="flex flex-wrap gap-2">{section === "manage" ? <button className="rounded-xl bg-teal-600 px-5 py-3 font-bold text-white shadow-md shadow-teal-200" onClick={() => { setSection("add"); setMode("choice"); }} type="button">+ Thêm học sinh</button> : <><button className="rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-700" onClick={() => setSection("manage")} type="button">← Danh sách</button>{mode !== "choice" && <button className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 font-bold text-teal-800" onClick={() => setMode("choice")} type="button">Chọn cách khác</button>}</>}</div>
     </div>
 
     {message ? <p className="mt-5 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-700" role="status">{message}</p> : null}
     {credential ? <div className="mt-4"><CredentialCard credential={credential} /></div> : null}
 
-    {focus === "add" && mode === "choice" ? <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+    {section === "add" && mode === "choice" ? <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
       <button className="rounded-xl border bg-white p-5 text-left hover:border-teal-500" onClick={() => setMode("manual")} type="button"><strong>+ Thêm thủ công</strong><span className="mt-1 block text-sm text-slate-500">Nhập một học sinh</span></button>
       <button className="rounded-xl border bg-white p-5 text-left hover:border-teal-500" onClick={() => setMode("excel")} type="button"><strong>↑ Import từ Excel</strong><span className="mt-1 block text-sm text-slate-500">Preview trước khi tạo</span></button>
     </div> : null}
 
-    {focus === "add" && mode === "manual" ? <div className="mt-5 rounded-2xl border border-slate-200 p-5"><h3 className="font-bold">Thêm học sinh thủ công</h3>
+    {section === "add" && mode === "manual" ? <div className="mt-5 rounded-2xl border border-slate-200 p-5"><h3 className="font-bold">Thêm học sinh thủ công</h3>
       {manualErrors.length ? <div className="mt-3 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700" role="alert">{manualErrors.map((error) => <p key={error}>{error}</p>)}</div> : null}
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <label className="text-sm font-semibold">Họ và tên *<input className={`${inputClass} mt-2`} value={manual.fullName} onChange={(e) => setManual({ ...manual, fullName: e.target.value })} /></label>
@@ -182,7 +183,7 @@ export function StudentManager({ classroomId, classroomName, initialStudents, fo
       </div><div className="mt-4 flex gap-3"><button className="rounded-lg bg-teal-600 px-4 py-2 font-semibold text-white disabled:opacity-50" disabled={isPending} onClick={createManual} type="button">{isPending ? "Đang tạo…" : "Tạo tài khoản"}</button><button onClick={() => setMode("choice")} type="button">Quay lại</button></div>
     </div> : null}
 
-    {focus === "add" && mode === "excel" ? <div className="mt-5 rounded-2xl border border-slate-200 p-5"><h3 className="font-bold">Import từ Excel</h3><p className="mt-1 text-sm text-slate-500">File chỉ được đọc để preview, chưa tạo tài khoản.</p>
+    {section === "add" && mode === "excel" ? <div className="mt-5 rounded-2xl border border-slate-200 p-5"><h3 className="font-bold">Import từ Excel</h3><p className="mt-1 text-sm text-slate-500">File chỉ được đọc để preview, chưa tạo tài khoản.</p>
       <input accept=".xls,.xlsx" className="mt-4 block w-full text-sm" onChange={(e) => loadExcel(e.target.files?.[0])} type="file" />
       {workbook ? <><label className="mt-4 block text-sm font-semibold">Sheet<select className={`${inputClass} mt-2`} value={sheet} onChange={(e) => selectSheet(e.target.value)}>{workbook.sheetNames.map((name) => <option key={name} value={name}>{name} ({workbook.studentsBySheet[name].length} học sinh)</option>)}</select></label>
         {!preview.length ? <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">Sheet này không có danh sách học sinh hợp lệ. Hãy chọn sheet lớp khác.</p> : null}
@@ -194,7 +195,7 @@ export function StudentManager({ classroomId, classroomName, initialStudents, fo
       {bulkCredentials.length ? <div className="mt-5 space-y-3">{bulkCredentials.map((item) => <CredentialCard credential={item} key={item.studentId} />)}</div> : null}
     </div> : null}
 
-    {focus === "manage" ? <div className="mt-7"><input aria-label="Tìm học sinh" className={`${inputClass} max-w-sm`} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm theo tên học sinh…" value={search} />
+    {section === "manage" ? <div className="mt-7"><input aria-label="Tìm học sinh" className={`${inputClass} max-w-sm`} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm theo tên học sinh…" value={search} />
       <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[820px] text-left text-sm"><thead className="bg-slate-100"><tr><th className="p-3">Họ tên</th><th>Ngày sinh</th><th>Giới tính</th><th>Username</th><th>Trạng thái</th><th>Tuỳ chọn</th></tr></thead><tbody>{visibleStudents.map((student) => <tr className="border-t" key={student.id}><td className="p-3 font-semibold">{student.fullName}</td><td>{student.dateOfBirth ?? "—"}</td><td>{student.gender === "FEMALE" ? "Nữ" : student.gender === "MALE" ? "Nam" : "—"}</td><td>{student.username}</td><td>{student.displayStatus === "ACTIVE" ? <span className="rounded-full bg-teal-50 px-2 py-1 text-teal-700">Đang học</span> : student.displayStatus === "WITHDRAWN" ? <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">Đã thôi học</span> : <span className="rounded-full bg-amber-50 px-2 py-1 text-amber-700">Đã hết hạn</span>}</td><td className="py-2"><button aria-expanded={openActionsFor === student.id} className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-700 hover:border-teal-600 hover:text-teal-700" onClick={(event) => { if (openActionsFor === student.id) return setOpenActionsFor(null); const rect = event.currentTarget.getBoundingClientRect(); setActionsPosition({ top: rect.bottom + 8, left: Math.max(12, Math.min(rect.right - 192, window.innerWidth - 204)) }); setOpenActionsFor(student.id); }} type="button">Tuỳ chọn ▾</button></td></tr>)}</tbody></table>{!visibleStudents.length ? <p className="p-6 text-center text-slate-500">Chưa có học sinh.</p> : null}</div>
     </div> : null}
 

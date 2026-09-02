@@ -10,13 +10,13 @@ import { ClassDetailTabs, type ClassTab } from "@/features/classroom/components/
 import { StudentManager } from "@/features/students/components/student-manager";
 import { getClassroomStudents } from "@/features/students/server/student-service";
 
-const validTabs = new Set<ClassTab>(["overview", "assignments", "students", "add-students", "ranking"]);
+const validTabs = new Set<ClassTab>(["overview", "assignments", "students", "ranking"]);
 
-interface Props { params: Promise<{ classId: string }>; searchParams: Promise<{ tab?: string }> }
+interface Props { params: Promise<{ classId: string }>; searchParams: Promise<{ tab?: string; mode?: string }> }
 
 export default async function ClassroomDetailPage({ params, searchParams }: Props) {
   const [{ classId }, query] = await Promise.all([params, searchParams]);
-  const [studentData, learningData, leaderboard] = await Promise.all([getClassroomStudents(classId), getTeacherAssignments(classId), getClassLeaderboard(classId)]);
+  const [studentData, learningData, leaderboard] = await Promise.all([getClassroomStudents(classId), getTeacherAssignments(classId), withTimeout(getClassLeaderboard(classId).catch(() => []), 5000, [])]);
   if (!studentData || !learningData) notFound();
 
   const initialTab = validTabs.has(query.tab as ClassTab) ? query.tab as ClassTab : "overview";
@@ -50,16 +50,21 @@ export default async function ClassroomDetailPage({ params, searchParams }: Prop
     <Link href="/teacher" className="text-sm font-bold text-teal-700">← Trang chủ giáo viên</Link>
     <section className="relative mt-5 overflow-hidden rounded-3xl bg-gradient-to-br from-teal-700 via-teal-600 to-cyan-500 px-6 py-7 text-white shadow-lg shadow-teal-200/60 sm:px-9 sm:py-9">
       <div className="absolute -right-16 -top-20 size-64 rounded-full bg-white/10" /><div className="absolute -bottom-24 left-1/3 size-52 rounded-full bg-cyan-200/15" />
-      <div className="relative flex flex-wrap items-end justify-between gap-5"><div><p className="text-xs font-black tracking-[0.22em] text-teal-100">KHÔNG GIAN LỚP HỌC</p><h1 className="mt-2 text-4xl font-black">{studentData.classroom.name}</h1><p className="mt-2 font-semibold text-teal-50">Khối {studentData.classroom.gradeLevel} · Năm học {studentData.classroom.academicYear}</p></div><div className="grid grid-cols-2 gap-2 text-center"><div className="rounded-2xl border border-white/20 bg-white/15 px-4 py-3 backdrop-blur"><b className="block text-2xl">{studentData.students.length}</b><span className="text-xs font-bold text-teal-50">Học sinh</span></div><div className="rounded-2xl border border-white/20 bg-white/15 px-4 py-3 backdrop-blur"><b className="block text-2xl">{openCount}</b><span className="text-xs font-bold text-teal-50">Bài đang mở</span></div></div></div>
+      <div className="relative flex flex-wrap items-end justify-between gap-5"><div><p className="text-xs font-black tracking-[0.22em] text-teal-100">KHÔNG GIAN LỚP HỌC</p><h1 className="mt-2 text-4xl font-black">{studentData.classroom.name}</h1><p className="mt-2 font-semibold text-teal-50">Khối {studentData.classroom.gradeLevel} · Năm học {studentData.classroom.academicYear}</p></div><div className="flex flex-wrap items-end gap-3"><Link href={`/teacher/classes/${classId}?tab=students&mode=add`} className="rounded-2xl bg-amber-300 px-5 py-3 font-black text-slate-900 shadow-md">+ Thêm học sinh</Link><div className="grid grid-cols-2 gap-2 text-center"><div className="rounded-2xl border border-white/20 bg-white/15 px-4 py-3 backdrop-blur"><b className="block text-2xl">{studentData.students.length}</b><span className="text-xs font-bold text-teal-50">Học sinh</span></div><div className="rounded-2xl border border-white/20 bg-white/15 px-4 py-3 backdrop-blur"><b className="block text-2xl">{openCount}</b><span className="text-xs font-bold text-teal-50">Bài đang mở</span></div></div></div></div>
     </section>
     <ClassDetailTabs initialTab={initialTab} badges={{ assignments: learningData.assignments.length, students: studentData.students.length, ranking: leaderboard.length }} panels={{
       overview,
       assignments,
-      students: <StudentManager classroomId={studentData.classroom.id} classroomName={studentData.classroom.name} initialStudents={studentData.students} focus="manage" />,
-      "add-students": <StudentManager classroomId={studentData.classroom.id} classroomName={studentData.classroom.name} initialStudents={studentData.students} focus="add" />,
+      students: <StudentManager classroomId={studentData.classroom.id} classroomName={studentData.classroom.name} initialStudents={studentData.students} focus={query.mode === "add" ? "add" : "manage"} />,
       ranking: <Leaderboard title={`Xếp hạng lớp ${studentData.classroom.name}`} subtitle="Tổng điểm cao hơn xếp trước; nếu bằng điểm, học sinh hoàn thành nhanh hơn sẽ đứng trên." rows={leaderboard} />,
     }} />
   </main>;
+}
+
+async function withTimeout<T>(promise: Promise<T>, milliseconds: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try { return await Promise.race([promise, new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), milliseconds); })]); }
+  finally { if (timer) clearTimeout(timer); }
 }
 
 function Metric({ label, value, accent }: { label: string; value: number; accent: "teal" | "cyan" | "emerald" | "amber" }) {

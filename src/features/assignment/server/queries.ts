@@ -112,11 +112,8 @@ export async function getTeacherAssignmentResults(assignmentId: string) {
   ]);
   const taskIds = (tasks ?? []).map((item) => item.id);
   const { data: questions } = taskIds.length ? await supabase.from("questions").select("task_id,points").in("task_id", taskIds) : { data: [] };
-  const taskSkill = new Map((tasks ?? []).map((task) => [task.id, task.skill]));
-  const objectiveMax = (questions ?? []).filter((question) => taskSkill.get(question.task_id) !== "SPEAKING").reduce((sum, question) => sum + question.points, 0);
-  const speakingMax = (tasks ?? []).some((task) => task.skill === "SPEAKING") ? 10 : 0;
   const submissionMap = new Map((submissions ?? []).map((item) => [item.student_id, item]));
-  return { assignment, maxScore: objectiveMax + speakingMax, students: (profiles ?? []).map((student) => ({ student, submission: submissionMap.get(student.id) ?? null })) };
+  return { assignment, maxScore: (questions ?? []).reduce((sum, question) => sum + question.points, 0), students: (profiles ?? []).map((student) => ({ student, submission: submissionMap.get(student.id) ?? null })) };
 }
 
 export async function getTeacherSubmissionResult(submissionId: string) {

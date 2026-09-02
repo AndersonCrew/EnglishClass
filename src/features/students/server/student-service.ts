@@ -165,7 +165,6 @@ export async function getClassroomStudents(classroomId: string): Promise<{ class
   const { data: profiles } = await supabase.from("profiles")
     .select("id, full_name, date_of_birth, gender, parent_phone, username").in("id", ids).order("full_name");
   const membershipByStudent = new Map((members ?? []).map((member) => [member.student_id, member]));
-  const isExpired = classroom.ends_at !== null && classroom.ends_at < new Date().toISOString().slice(0, 10);
   const students = (profiles ?? []).flatMap((profile) => profile.username ? (() => {
     const membership = membershipByStudent.get(profile.id);
     if (!membership) return [];
@@ -173,7 +172,7 @@ export async function getClassroomStudents(classroomId: string): Promise<{ class
     id: profile.id, fullName: profile.full_name, dateOfBirth: profile.date_of_birth,
     gender: profile.gender, parentPhone: profile.parent_phone, username: profile.username,
     membershipStatus: membership.status, leftAt: membership.left_at,
-    displayStatus: membership.status === "WITHDRAWN" ? "WITHDRAWN" as const : isExpired ? "EXPIRED" as const : "ACTIVE" as const,
+    displayStatus: membership.status === "WITHDRAWN" ? "WITHDRAWN" as const : "ACTIVE" as const,
   }];
   })() : []);
   return { classroom: classroomData, students };
