@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect, RedirectType } from "next/navigation";
 import { requireRole } from "@/features/auth/server/guards";
 import { createClient } from "@/lib/supabase/server";
 import { classroomSchema } from "../schemas/classroom-schema";
@@ -16,5 +17,5 @@ export async function createClassroomAction(_state: CreateClassroomState, formDa
   const { data, error } = await supabase.from("classrooms").insert({ teacher_id: profile.id, name: parsed.data.name, grade_level: parsed.data.gradeLevel, academic_year: parsed.data.academicYear, ends_at: parsed.data.endsAt }).select("id").single();
   if (error || !data) return { message: "Không thể tạo lớp. Vui lòng thử lại.", fields };
   revalidatePath("/teacher");
-  return { message: "", classroomId: data.id };
+  redirect(`/teacher/classes/${data.id}`, RedirectType.replace);
 }
