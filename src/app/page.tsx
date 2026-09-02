@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getCurrentProfile, homePathForRole } from "@/features/auth/server/auth-service";
+import { PublicFooter } from "@/components/layout/public-footer";
 
 const steps = [
   ["01", "Giáo viên giao nhiệm vụ"],
@@ -94,6 +95,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <article className="rounded-2xl border border-white/10 bg-white/5 p-6"><h2 className="text-lg font-bold text-teal-300">Đúng trọng tâm</h2><p className="mt-3 leading-7 text-slate-300">Tập trung vào giao bài, nộp bài, đánh giá và theo dõi tiến bộ.</p></article>
         </div>
       </section>
+      <PublicFooter dark />
     </main>
   );
 }
