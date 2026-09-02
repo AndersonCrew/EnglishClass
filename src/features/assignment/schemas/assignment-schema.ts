@@ -39,6 +39,7 @@ export const assignmentDraftSchema = z.object({
   title: z.string().trim().min(1, "Vui lòng nhập tên bài tập.").max(200),
   description: z.string().trim().max(2000),
   dueAt: z.string().max(40),
+  level: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   showResultsAfterSubmit: z.boolean(),
   tasks: z.array(z.object({
     clientId: z.string().min(1), title: z.string().trim().min(1).max(200),
@@ -47,4 +48,7 @@ export const assignmentDraftSchema = z.object({
     category: z.string().trim().max(60),
     questions: z.array(questionSchema).min(1, "Mỗi phần cần ít nhất một câu hỏi."),
   })).min(1, "Bài tập cần ít nhất một phần."),
+}).superRefine((draft, context) => {
+  const skills = new Set(draft.tasks.map((task) => task.skill));
+  if (skills.size !== 4) context.addIssue({ code: "custom", path: ["tasks"], message: "Mỗi bài cần đủ 4 phần Listening, Speaking, Reading và Writing." });
 });

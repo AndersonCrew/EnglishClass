@@ -42,7 +42,7 @@ type ClassMemberRow = {
   created_at: string;
 }
 
-type AssignmentRow = { id: string; classroom_id: string; title: string; description: string | null; due_at: string | null; status: AssignmentStatus; show_results_after_submit: boolean; created_at: string; updated_at: string };
+type AssignmentRow = { id: string; classroom_id: string; title: string; description: string | null; due_at: string | null; status: AssignmentStatus; show_results_after_submit: boolean; level: 1 | 2 | 3 | 4; sequence_index: number | null; curriculum_code: string | null; published_at: string | null; cover_image_path: string | null; closes_at: string | null; created_at: string; updated_at: string };
 type TaskRow = { id: string; assignment_id: string; skill: SkillType; title: string; instruction: string | null; content: Record<string, unknown>; category: string | null; order_index: number; created_at: string; updated_at: string };
 type QuestionRow = { id: string; task_id: string; type: QuestionType; prompt: string; instruction: string | null; image_path: string | null; config: Record<string, unknown>; points: number; order_index: number; created_at: string; updated_at: string };
 type AnswerKeyRow = { question_id: string; answer_key: Record<string, unknown>; created_at: string; updated_at: string };
@@ -72,7 +72,7 @@ export interface Database {
         Relationships: [];
       };
       audit_logs: { Row: AuditLogRow; Insert: Pick<AuditLogRow, "actor_role" | "action" | "target_type"> & Partial<Omit<AuditLogRow, "actor_role" | "action" | "target_type">>; Update: Record<string, never>; Relationships: [] };
-      assignments: { Row: AssignmentRow; Insert: Pick<AssignmentRow, "classroom_id" | "title"> & Partial<Omit<AssignmentRow, "classroom_id" | "title">>; Update: Partial<Pick<AssignmentRow, "title" | "description" | "due_at" | "status" | "show_results_after_submit">>; Relationships: [] };
+      assignments: { Row: AssignmentRow; Insert: Pick<AssignmentRow, "classroom_id" | "title"> & Partial<Omit<AssignmentRow, "classroom_id" | "title">>; Update: Partial<Pick<AssignmentRow, "title" | "description" | "due_at" | "status" | "show_results_after_submit" | "level" | "sequence_index" | "curriculum_code" | "published_at" | "cover_image_path" | "closes_at">>; Relationships: [] };
       tasks: { Row: TaskRow; Insert: Pick<TaskRow, "assignment_id" | "skill" | "title" | "order_index"> & Partial<Omit<TaskRow, "assignment_id" | "skill" | "title" | "order_index">>; Update: Partial<Pick<TaskRow, "skill" | "title" | "instruction" | "content" | "category" | "order_index">>; Relationships: [] };
       questions: { Row: QuestionRow; Insert: Pick<QuestionRow, "task_id" | "type" | "prompt" | "order_index"> & Partial<Omit<QuestionRow, "task_id" | "type" | "prompt" | "order_index">>; Update: Partial<Pick<QuestionRow, "type" | "prompt" | "instruction" | "image_path" | "config" | "points" | "order_index">>; Relationships: [] };
       question_answer_keys: { Row: AnswerKeyRow; Insert: Pick<AnswerKeyRow, "question_id" | "answer_key"> & Partial<Omit<AnswerKeyRow, "question_id" | "answer_key">>; Update: Pick<AnswerKeyRow, "answer_key">; Relationships: [] };
@@ -97,6 +97,11 @@ export interface Database {
       save_student_answer: { Args: { target_submission_id: string; target_question_id: string; answer_value: Record<string, unknown> }; Returns: undefined };
       submit_assignment: { Args: { target_submission_id: string }; Returns: undefined };
       assess_student_answer: { Args: { target_answer_id: string; score_value: number; feedback_value: string }; Returns: undefined };
+      set_assignment_publication: { Args: { target_assignment_id: string; target_status: AssignmentStatus }; Returns: undefined };
+      student_can_upload_speaking_audio: { Args: { target_submission_id: string; target_question_id: string }; Returns: boolean };
+      provision_curriculum_assignment: { Args: { target_classroom_id: string; lesson_code: string; lesson_title: string; lesson_description: string; lesson_level: number; lesson_sequence: number; lesson_tasks: Record<string, unknown>[] }; Returns: string };
+      open_assignment_until: { Args: { target_assignment_id: string; close_time: string }; Returns: undefined };
+      student_can_work_assignment: { Args: { target_id: string }; Returns: boolean };
       get_teacher_dashboard: { Args: Record<string, never>; Returns: Record<string, unknown> };
     };
     Enums: {

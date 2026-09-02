@@ -25,6 +25,7 @@ export type AssignmentDraft = {
   title: string;
   description: string;
   dueAt: string;
+  level: 1 | 2 | 3 | 4;
   showResultsAfterSubmit: boolean;
   tasks: BuilderTask[];
 };

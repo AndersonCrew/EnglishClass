@@ -1,18 +1,12 @@
+import Image from "next/image";
 import Link from "next/link";
 import { getStudentAssignments } from "@/features/assignment/server/queries";
 
 export default async function StudentPage() {
-  const assignments = await getStudentAssignments();
-  return (
-    <main className="mx-auto max-w-4xl px-5 py-8 sm:px-8 sm:py-10">
-      <div className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm sm:p-9">
-        <p className="text-sm font-bold text-teal-700">BÀI HỌC CỦA EM</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight">Xin chào!</h1>
-        <p className="mt-3 max-w-xl text-lg leading-8 text-slate-600">
-          Chọn một nhiệm vụ bên dưới và bắt đầu làm bài nhé.
-        </p>
-      </div>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">{assignments.map((assignment) => <Link key={assignment.id} href={`/student/assignments/${assignment.id}`} className="rounded-2xl border-2 border-slate-100 bg-white p-5 shadow-sm transition hover:border-teal-300"><span className="rounded-full bg-teal-100 px-3 py-1 text-xs font-bold text-teal-800">BÀI TẬP</span><h2 className="mt-3 text-xl font-bold">{assignment.title}</h2><p className="mt-2 text-sm text-slate-500">{assignment.due_at ? `Hạn: ${new Date(assignment.due_at).toLocaleString("vi-VN")}` : "Không giới hạn thời gian"}</p><span className="mt-5 inline-block font-bold text-teal-700">Làm bài →</span></Link>)}{!assignments.length && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500 sm:col-span-2">Em chưa có bài tập mới.</div>}</div>
-    </main>
-  );
+  const assignments = await getStudentAssignments(); const current = assignments.find((item) => !item.submission || item.submission.status === "DRAFT");
+  return <main className="mx-auto max-w-5xl px-5 py-8 sm:px-8 sm:py-10">
+    <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-teal-500 via-cyan-500 to-sky-500 p-7 text-white shadow-lg shadow-cyan-100 sm:p-9"><p className="text-sm font-bold tracking-wider text-cyan-50">BÀI HỌC CỦA EM</p><h1 className="mt-2 text-3xl font-black tracking-tight">Hôm nay mình học gì?</h1><p className="mt-3 max-w-xl text-lg text-cyan-50">Hoàn thành lần lượt Listening, Reading, Writing và Speaking nhé!</p>{current && <Link href={`/student/assignments/${current.id}`} className="mt-6 inline-flex min-h-14 items-center rounded-2xl bg-amber-300 px-6 py-3 text-lg font-black text-slate-900 shadow-md shadow-cyan-700/20">{current.submission ? "Tiếp tục làm bài" : "Bắt đầu bài hôm nay"} →</Link>}</section>
+    <div className="mt-8 flex items-end justify-between"><div><p className="text-xs font-bold tracking-[0.2em] text-teal-700">BÀI ĐANG MỞ</p><h2 className="mt-2 text-2xl font-black">Chọn một bài để bắt đầu</h2></div><span className="text-sm font-semibold text-slate-500">{assignments.length} bài</span></div>
+    <div className="mt-5 grid gap-5 sm:grid-cols-2">{assignments.map((assignment, index) => { const submitted = assignment.submission?.status === "SUBMITTED"; const graded = Boolean(assignment.submission?.assessed_at); const cover = assignment.cover_image_path ?? `/images/grade3/lesson-${String(Math.min(index + 1, 12)).padStart(2, "0")}.webp`; return <Link key={assignment.id} href={`/student/assignments/${assignment.id}`} className="group overflow-hidden rounded-2xl bg-white shadow-md ring-1 ring-slate-200 transition hover:-translate-y-1 hover:ring-teal-300"><div className="relative h-44 overflow-hidden"><Image src={cover} fill sizes="(min-width:640px) 50vw, 100vw" alt={`Ảnh bìa ${assignment.title}`} className="object-cover transition duration-300 group-hover:scale-105" /><span className={`absolute right-3 top-3 rounded-full px-3 py-1 text-xs font-bold shadow ${graded ? "bg-violet-100 text-violet-700" : submitted ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>{graded ? "Đã chấm" : submitted ? "Đã nộp" : assignment.submission ? "Đang làm" : "Bài mới"}</span></div><div className="p-5"><p className="text-xs font-bold text-cyan-700">LEVEL {assignment.level} · BÀI {assignment.sequence_index ?? index + 1}</p><h3 className="mt-1 text-xl font-black">{assignment.title}</h3><p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">{assignment.description}</p>{assignment.closes_at && <p className="mt-3 text-xs font-bold text-amber-700">Đóng lúc {new Date(assignment.closes_at).toLocaleString("vi-VN")}</p>}<span className="mt-4 inline-block font-bold text-teal-700">{submitted ? "Xem bài" : assignment.submission ? "Làm tiếp" : "Bắt đầu"} →</span></div></Link>; })}{!assignments.length && <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500 sm:col-span-2">🔒 Giáo viên chưa mở bài mới. Em quay lại sau nhé!</div>}</div>
+  </main>;
 }

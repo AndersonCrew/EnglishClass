@@ -296,6 +296,25 @@ Path bắt đầu bằng `classroom_id`; teacher sở hữu lớp được ghi/x
 Ứng dụng tạo signed URL thời hạn ngắn để hiển thị. MVP chưa hỗ trợ PDF import, OCR, AI sinh bài,
 ngân hàng câu hỏi hay cộng tác nhiều giáo viên.
 
+### 6.2 Lộ trình bài học theo lớp (khối 3 đầu tiên)
+
+Mỗi assignment là một bài/ngày trong lộ trình của một classroom và có `sequence_index`
+cùng `level` từ 1 đến 4. Bài luôn được tạo ở `DRAFT` (khóa). Teacher mở bài qua RPC
+`set_assignment_publication`; database chỉ cho publish khi bài có đủ bốn skill và mỗi skill
+có ít nhất một question. Student chỉ đọc/làm assignment `PUBLISHED` khi membership còn
+`ACTIVE` và lớp chưa hết hạn. Việc ẩn khóa trên UI không thay thế kiểm tra này.
+
+Lộ trình mẫu khối 3 gồm 12 bài, có `curriculum_code` để provision idempotent theo từng lớp.
+Nội dung tăng từ nhận biết, hiểu câu, vận dụng đến bài tổng hợp. Đây là dữ liệu khởi tạo có thể
+chỉnh sửa về sau; không tạo bảng riêng cho từng khối.
+
+Speaking dùng question `TEXT_INPUT` với `config.responseMode = AUDIO`. Student thu âm hoặc
+chọn file, object được lưu trong private bucket `speaking-submissions` theo path chứa classroom,
+submission, question và student. Storage policy kiểm tra actor, submission còn `DRAFT` và bài
+đang mở. Chỉ teacher sở hữu classroom được nghe/chấm; điểm tổng trên submission được cập nhật
+khi toàn bộ câu Speaking đã được chấm. Listening mẫu dùng `config.speakText` và Web Speech API
+ở client; kiến trúc vẫn cho phép thay bằng audio giáo viên upload trong giai đoạn nội dung sau.
+
 Mỗi feature chỉ tạo các thư mục thực sự cần, thường gồm:
 
 ```text

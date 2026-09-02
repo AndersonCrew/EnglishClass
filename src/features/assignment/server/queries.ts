@@ -8,28 +8,46 @@ export async function getTeacherAssignments(classroomId: string) {
   const supabase = await createClient();
   const [{ data: classroom }, { data: assignments }] = await Promise.all([
     supabase.from("classrooms").select("id,name,grade_level,academic_year").eq("id", classroomId).maybeSingle(),
-    supabase.from("assignments").select("id,title,description,status,due_at,created_at").eq("classroom_id", classroomId).order("created_at", { ascending: false }),
+    supabase.from("assignments").select("id,title,description,status,due_at,created_at,level,sequence_index,curriculum_code,cover_image_path,closes_at").eq("classroom_id", classroomId).order("level", { ascending: true }).order("sequence_index", { ascending: true, nullsFirst: false }),
   ]);
-  return classroom ? { classroom, assignments: assignments ?? [] } : null;
+  if (!classroom) return null;
+  const assignmentIds = (assignments ?? []).map((item) => item.id);
+  const [{ data: submissions }, { count: studentCount }] = await Promise.all([
+    assignmentIds.length ? supabase.from("submissions").select("assignment_id,status,assessed_at").in("assignment_id", assignmentIds) : Promise.resolve({ data: [] }),
+    supabase.from("class_members").select("student_id", { count: "exact", head: true }).eq("classroom_id", classroomId).eq("status", "ACTIVE"),
+  ]);
+  const progress = new Map<string, { started: number; submitted: number; graded: number }>();
+  for (const item of submissions ?? []) {
+    const value = progress.get(item.assignment_id) ?? { started: 0, submitted: 0, graded: 0 };
+    value.started += 1;
+    if (item.status === "SUBMITTED") value.submitted += 1;
+    if (item.assessed_at) value.graded += 1;
+    progress.set(item.assignment_id, value);
+  }
+  return { classroom, assignments: assignments ?? [], progress, studentCount: studentCount ?? 0, serverNow: new Date().toISOString() };
 }
 
 export async function getStudentAssignments() {
-  await requireRole("STUDENT");
+  const profile = await requireRole("STUDENT");
   const supabase = await createClient();
-  const { data } = await supabase.from("assignments").select("id,title,description,due_at,status,classroom_id,created_at").order("created_at", { ascending: false });
-  return data ?? [];
+  const { data } = await supabase.from("assignments").select("id,title,description,due_at,status,classroom_id,created_at,level,sequence_index,cover_image_path,closes_at").eq("status", "PUBLISHED").gt("closes_at", new Date().toISOString()).order("level", { ascending: true }).order("sequence_index", { ascending: true, nullsFirst: false });
+  const ids = (data ?? []).map((item) => item.id);
+  const { data: submissions } = ids.length ? await supabase.from("submissions").select("assignment_id,status,assessed_at,auto_score,teacher_score").eq("student_id", profile.id).in("assignment_id", ids) : { data: [] };
+  const submissionMap = new Map((submissions ?? []).map((item) => [item.assignment_id, item]));
+  return (data ?? []).map((item) => ({ ...item, submission: submissionMap.get(item.id) ?? null }));
 }
 
 export async function getStudentAssignment(assignmentId: string) {
   const profile = await requireRole("STUDENT");
   const supabase = await createClient();
-  const { data: assignment } = await supabase.from("assignments").select("id,title,description,due_at,status,show_results_after_submit,classroom_id").eq("id", assignmentId).maybeSingle();
+  const { data: assignment } = await supabase.from("assignments").select("id,title,description,due_at,status,show_results_after_submit,classroom_id,cover_image_path,closes_at").eq("id", assignmentId).maybeSingle();
   if (!assignment) return null;
   const { data: tasks } = await supabase.from("tasks").select("id,title,instruction,skill,category,order_index").eq("assignment_id", assignmentId).order("order_index");
   const taskIds = (tasks ?? []).map((task) => task.id);
   const { data: rawQuestions } = taskIds.length ? await supabase.from("questions").select("id,task_id,type,prompt,instruction,image_path,config,points,order_index").in("task_id", taskIds).order("order_index") : { data: [] };
   const questions = await Promise.all((rawQuestions ?? []).map(async (question) => {
     if (!question.image_path) return { ...question, image_url: null };
+    if (question.image_path.startsWith("/")) return { ...question, image_url: question.image_path };
     const { data } = await supabase.storage.from("question-media").createSignedUrl(question.image_path, 60 * 15);
     return { ...question, image_url: data?.signedUrl ?? null };
   }));
@@ -39,8 +57,14 @@ export async function getStudentAssignment(assignmentId: string) {
     const { data } = await supabase.rpc("start_assignment_submission", { target_assignment_id: assignmentId });
     submissionId = data ?? undefined;
   }
-  const { data: answers } = submissionId ? await supabase.from("student_answers").select("id,question_id,answer,auto_score,is_correct,teacher_score,teacher_feedback").eq("submission_id", submissionId) : { data: [] };
-  return { assignment, tasks: tasks ?? [], questions, submission: submission ? { ...submission, id: submissionId! } : { id: submissionId!, status: "DRAFT" as const, submitted_at: null, auto_score: null, teacher_score: null, teacher_feedback: null }, answers: answers ?? [] };
+  const { data: rawAnswers } = submissionId ? await supabase.from("student_answers").select("id,question_id,answer,auto_score,is_correct,teacher_score,teacher_feedback").eq("submission_id", submissionId) : { data: [] };
+  const answers = await Promise.all((rawAnswers ?? []).map(async (answer) => {
+    const audioPath = typeof answer.answer.audioPath === "string" ? answer.answer.audioPath : null;
+    if (!audioPath) return { ...answer, audio_url: null };
+    const { data: signed } = await supabase.storage.from("speaking-submissions").createSignedUrl(audioPath, 60 * 15);
+    return { ...answer, audio_url: signed?.signedUrl ?? null };
+  }));
+  return { assignment, tasks: tasks ?? [], questions, submission: submission ? { ...submission, id: submissionId! } : { id: submissionId!, status: "DRAFT" as const, submitted_at: null, auto_score: null, teacher_score: null, teacher_feedback: null }, answers };
 }
 
 export async function getTeacherAssignmentResults(assignmentId: string) {
@@ -48,10 +72,19 @@ export async function getTeacherAssignmentResults(assignmentId: string) {
   const supabase = await createClient();
   const { data: assignment } = await supabase.from("assignments").select("id,title,classroom_id").eq("id", assignmentId).maybeSingle();
   if (!assignment) return null;
-  const { data: submissions } = await supabase.from("submissions").select("id,student_id,status,submitted_at,auto_score,teacher_score,teacher_feedback").eq("assignment_id", assignmentId).order("submitted_at");
-  const studentIds = (submissions ?? []).map((s) => s.student_id);
-  const { data: profiles } = studentIds.length ? await supabase.from("profiles").select("id,full_name").in("id", studentIds) : { data: [] };
-  return { assignment, submissions: submissions ?? [], names: new Map((profiles ?? []).map((p) => [p.id, p.full_name])) };
+  const [{ data: submissions }, { data: members }] = await Promise.all([
+    supabase.from("submissions").select("id,student_id,status,submitted_at,auto_score,teacher_score,teacher_feedback,assessed_at").eq("assignment_id", assignmentId).order("submitted_at"),
+    supabase.from("class_members").select("student_id,status").eq("classroom_id", assignment.classroom_id).eq("status", "ACTIVE"),
+  ]);
+  const studentIds = (members ?? []).map((item) => item.student_id);
+  const [{ data: profiles }, { data: tasks }] = await Promise.all([
+    studentIds.length ? supabase.from("profiles").select("id,full_name").in("id", studentIds).order("full_name") : Promise.resolve({ data: [] }),
+    supabase.from("tasks").select("id").eq("assignment_id", assignmentId),
+  ]);
+  const taskIds = (tasks ?? []).map((item) => item.id);
+  const { data: questions } = taskIds.length ? await supabase.from("questions").select("points").in("task_id", taskIds) : { data: [] };
+  const submissionMap = new Map((submissions ?? []).map((item) => [item.student_id, item]));
+  return { assignment, maxScore: (questions ?? []).reduce((sum, item) => sum + item.points, 0), students: (profiles ?? []).map((student) => ({ student, submission: submissionMap.get(student.id) ?? null })) };
 }
 
 export async function getTeacherSubmissionResult(submissionId: string) {
@@ -66,7 +99,16 @@ export async function getTeacherSubmissionResult(submissionId: string) {
   ]);
   if (!assignment || !student) return null;
   const questionIds = (answers ?? []).map((answer) => answer.question_id);
-  const { data: questions } = questionIds.length ? await supabase.from("questions").select("id,prompt,type,points").in("id", questionIds) : { data: [] };
+  const { data: questions } = questionIds.length ? await supabase.from("questions").select("id,task_id,prompt,type,points,config").in("id", questionIds) : { data: [] };
+  const taskIds = [...new Set((questions ?? []).map((item) => item.task_id))];
+  const { data: tasks } = taskIds.length ? await supabase.from("tasks").select("id,skill,title,order_index").in("id", taskIds) : { data: [] };
+  const taskMap = new Map((tasks ?? []).map((task) => [task.id, task]));
   const questionMap = new Map((questions ?? []).map((question) => [question.id, question]));
-  return { assignment, student, submission, answers: (answers ?? []).map((answer) => ({ ...answer, question: questionMap.get(answer.question_id) })).filter((answer) => answer.question !== undefined) };
+  const enrichedAnswers = await Promise.all((answers ?? []).map(async (answer) => {
+    const question = questionMap.get(answer.question_id); if (!question) return null;
+    const audioPath = typeof answer.answer.audioPath === "string" ? answer.answer.audioPath : null;
+    const { data: signed } = audioPath ? await supabase.storage.from("speaking-submissions").createSignedUrl(audioPath, 60 * 30) : { data: null };
+    return { ...answer, question: { ...question, task: taskMap.get(question.task_id) }, audio_url: signed?.signedUrl ?? null };
+  }));
+  return { assignment, student, submission, answers: enrichedAnswers.filter((answer): answer is NonNullable<typeof answer> => answer !== null) };
 }

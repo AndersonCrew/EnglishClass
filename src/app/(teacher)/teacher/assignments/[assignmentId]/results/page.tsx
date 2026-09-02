@@ -3,18 +3,11 @@ import { notFound } from "next/navigation";
 import { getTeacherAssignmentResults } from "@/features/assignment/server/queries";
 
 export default async function ResultsPage({ params }: { params: Promise<{ assignmentId: string }> }) {
-  const { assignmentId } = await params;
-  const data = await getTeacherAssignmentResults(assignmentId);
-  if (!data) notFound();
-  const submitted = data.submissions.filter((item) => item.status === "SUBMITTED");
-  return <main className="mx-auto max-w-5xl px-5 py-8 sm:px-8">
-    <Link className="text-sm font-semibold text-teal-700" href={`/teacher/classes/${data.assignment.classroom_id}/assignments`}>← Danh sách bài tập</Link>
-    <h1 className="mt-3 text-3xl font-bold">{data.assignment.title}</h1>
-    <p className="mt-2 text-slate-500">Đã nộp: {submitted.length} học sinh</p>
-    <div className="mt-7 overflow-hidden rounded-2xl bg-white/90 shadow-md shadow-teal-100/60 ring-1 ring-teal-100">
-      <div className="grid grid-cols-[1fr_auto_auto] gap-4 border-b bg-slate-50 p-4 text-sm font-bold text-slate-600"><span>Học sinh</span><span>Trạng thái</span><span>Bài làm</span></div>
-      {data.submissions.map((submission) => <div key={submission.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b p-4 last:border-0"><b>{data.names.get(submission.student_id) ?? "Học sinh"}</b><span>{submission.status === "SUBMITTED" ? "Đã nộp" : "Đang làm"}</span><Link href={`/teacher/submissions/${submission.id}`} className="font-bold text-teal-700">{submission.auto_score ?? "Xem"} →</Link></div>)}
-      {!data.submissions.length && <p className="p-8 text-center text-slate-500">Chưa có học sinh bắt đầu làm bài.</p>}
-    </div>
+  const { assignmentId } = await params; const data = await getTeacherAssignmentResults(assignmentId); if (!data) notFound();
+  const submitted = data.students.filter((item) => item.submission?.status === "SUBMITTED").length;
+  const graded = data.students.filter((item) => item.submission?.assessed_at).length;
+  return <main className="mx-auto max-w-5xl px-5 py-8 sm:px-8"><Link className="text-sm font-semibold text-teal-700" href={`/teacher/classes/${data.assignment.classroom_id}/assignments`}>← Danh sách bài tập</Link><div className="mt-5 flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-3xl font-bold">{data.assignment.title}</h1><p className="mt-2 text-slate-500">Theo dõi cả lớp và chấm phần Speaking của các bài đã nộp.</p></div><div className="flex gap-3"><Summary value={submitted} label="Đã nộp" /><Summary value={graded} label="Đã chấm" /></div></div>
+    <div className="mt-7 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200"><div className="hidden grid-cols-[1fr_140px_120px_120px] gap-4 border-b bg-slate-50 p-4 text-sm font-bold text-slate-600 sm:grid"><span>Học sinh</span><span>Trạng thái</span><span>Điểm</span><span>Bài làm</span></div>{data.students.map(({ student, submission }) => { const total = submission ? (submission.auto_score ?? 0) + (submission.teacher_score ?? 0) : null; const state = !submission ? "Chưa làm" : submission.status === "DRAFT" ? "Đang làm" : submission.assessed_at ? "Đã chấm" : "Chờ chấm nói"; return <div key={student.id} className="grid gap-2 border-b p-4 last:border-0 sm:grid-cols-[1fr_140px_120px_120px] sm:items-center sm:gap-4"><b>{student.full_name}</b><span className="text-sm font-semibold text-slate-600">{state}</span><span className="font-bold text-teal-700">{total === null ? "—" : `${total}/${data.maxScore}`}</span>{submission?.status === "SUBMITTED" ? <Link href={`/teacher/submissions/${submission.id}`} className="font-bold text-teal-700">{submission.assessed_at ? "Xem lại" : "Chấm bài"} →</Link> : <span className="text-sm text-slate-400">Chưa có bài</span>}</div>; })}{!data.students.length && <p className="p-8 text-center text-slate-500">Lớp chưa có học sinh đang học.</p>}</div>
   </main>;
 }
+function Summary({ value, label }: { value: number; label: string }) { return <div className="min-w-24 rounded-xl bg-teal-50 px-4 py-3 text-center"><b className="text-2xl text-teal-800">{value}</b><p className="text-xs font-semibold text-teal-700">{label}</p></div>; }

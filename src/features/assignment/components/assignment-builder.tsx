@@ -24,11 +24,17 @@ function newQuestion(type: QuestionType = "MULTIPLE_CHOICE"): BuilderQuestion {
   if (type === "ORDERING") return { clientId: id(), type, prompt: "", instruction: "", imagePath: null, points: 1, config: { items: [] }, answerKey: { itemIds: [] } };
   return { clientId: id(), type, prompt: "", instruction: "", imagePath: null, points: 1, config: {}, answerKey: {} };
 }
-function newTask(): BuilderTask { return { clientId: id(), title: "Phần 1", instruction: "", skill: "READING", category: "", questions: [newQuestion()] }; }
+function newTask(skill: SkillType): BuilderTask {
+  const titles: Record<SkillType, string> = { LISTENING: "Listening", READING: "Reading", WRITING: "Writing", SPEAKING: "Speaking" };
+  const type: QuestionType = skill === "SPEAKING" ? "TEXT_INPUT" : skill === "WRITING" ? "FILL_BLANK" : "MULTIPLE_CHOICE";
+  const first = newQuestion(type);
+  if (skill === "SPEAKING") first.config = { responseMode: "AUDIO" };
+  return { clientId: id(), title: titles[skill], instruction: "", skill, category: "", questions: [first] };
+}
 
 export function AssignmentBuilder({ classroomId }: { classroomId: string }) {
   const router = useRouter();
-  const [draft, setDraft] = useState<AssignmentDraft>({ classroomId, title: "", description: "", dueAt: "", showResultsAfterSubmit: false, tasks: [newTask()] });
+  const [draft, setDraft] = useState<AssignmentDraft>({ classroomId, title: "", description: "", dueAt: "", level: 1, showResultsAfterSubmit: false, tasks: skills.map(newTask) });
   const [message, setMessage] = useState(""); const [preview, setPreview] = useState(false); const [pending, startTransition] = useTransition();
   const questionCount = useMemo(() => draft.tasks.reduce((n, task) => n + task.questions.length, 0), [draft.tasks]);
   const patchTask = (taskId: string, patch: Partial<BuilderTask>) => setDraft((current) => ({ ...current, tasks: current.tasks.map((task) => task.clientId === taskId ? { ...task, ...patch } : task) }));
@@ -42,7 +48,7 @@ export function AssignmentBuilder({ classroomId }: { classroomId: string }) {
       <div className="grid gap-5 md:grid-cols-2">
         <label className="text-sm font-semibold text-slate-700 md:col-span-2">Tên bài tập<input className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-base" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Ví dụ: Unit 2 – Practice" /></label>
         <label className="text-sm font-semibold text-slate-700 md:col-span-2">Mô tả<textarea className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 px-4 py-3" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
-        <label className="text-sm font-semibold text-slate-700">Hạn nộp<input type="datetime-local" className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3" value={draft.dueAt} onChange={(e) => setDraft({ ...draft, dueAt: e.target.value })} /></label>
+        <label className="text-sm font-semibold text-slate-700">Mức độ<select className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3" value={draft.level} onChange={(e) => setDraft({ ...draft, level: Number(e.target.value) as 1 | 2 | 3 | 4 })}><option value={1}>Level 1 · Nhận biết</option><option value={2}>Level 2 · Hiểu câu</option><option value={3}>Level 3 · Vận dụng</option><option value={4}>Level 4 · Tổng hợp</option></select></label>
         <label className="flex items-center gap-3 self-end rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold"><input type="checkbox" checked={draft.showResultsAfterSubmit} onChange={(e) => setDraft({ ...draft, showResultsAfterSubmit: e.target.checked })} /> Cho học sinh xem điểm sau khi nộp</label>
       </div>
     </section>
@@ -64,11 +70,11 @@ export function AssignmentBuilder({ classroomId }: { classroomId: string }) {
       <button className="mt-4 rounded-xl border border-dashed border-teal-400 px-4 py-3 font-semibold text-teal-700" onClick={() => patchTask(task.clientId, { questions: [...task.questions, newQuestion()] })}>+ Thêm câu hỏi</button>
     </section>)}
 
-    <button className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold" onClick={() => setDraft({ ...draft, tasks: [...draft.tasks, newTask()] })}>+ Thêm phần bài tập</button>
+    <p className="rounded-xl bg-teal-50 px-4 py-3 text-sm font-semibold text-teal-800">Mỗi bài cần giữ đủ bốn phần Listening, Speaking, Reading và Writing trước khi mở cho học sinh.</p>
     {preview && <Preview draft={draft} />}
     {message && <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">{message}</p>}
     <div className="sticky bottom-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/90 shadow-md shadow-teal-100/60 ring-1 ring-teal-100/95 p-4 shadow-lg backdrop-blur">
-      <span className="text-sm text-slate-500">{draft.tasks.length} phần • {questionCount} câu</span><div className="flex gap-2"><button className="rounded-xl border border-slate-300 px-4 py-3 font-semibold" onClick={() => setPreview(!preview)}>Xem trước</button><button disabled={pending} className="rounded-xl bg-teal-600 px-4 py-3 font-semibold text-white disabled:opacity-50" onClick={() => save(false)}>{pending ? "Đang lưu…" : "Lưu nháp"}</button><button disabled={pending} className="rounded-xl bg-teal-600 px-4 py-3 font-semibold text-white disabled:opacity-50" onClick={() => save(true)}>{pending ? "Đang giao…" : "Giao bài"}</button></div>
+      <span className="text-sm text-slate-500">{draft.tasks.length} phần • {questionCount} câu</span><div className="flex gap-2"><button className="rounded-xl border border-slate-300 px-4 py-3 font-semibold" onClick={() => setPreview(!preview)}>Xem trước</button><button disabled={pending} className="rounded-xl bg-teal-600 px-4 py-3 font-semibold text-white disabled:opacity-50" onClick={() => save(false)}>{pending ? "Đang lưu…" : "Lưu bản nháp"}</button></div>
     </div>
   </div>;
 }
@@ -81,10 +87,11 @@ function QuestionEditor({ classroomId, question, number, onPatch, onDelete, onDu
     <textarea className="mt-3 min-h-20 w-full rounded-xl border border-slate-300 bg-white px-4 py-3" value={question.prompt} onChange={(e) => onPatch({ prompt: e.target.value })} placeholder="Nội dung câu hỏi" />
     <label className="mt-3 inline-flex cursor-pointer items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold">{uploading ? "Đang tải..." : "Thêm ảnh"}<input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; const formData = new FormData(); formData.set("file", file); startUpload(async () => { const result = await uploadQuestionMediaAction(classroomId, formData); if (result.ok && result.path) { onPatch({ imagePath: result.path }); setImageUrl(result.signedUrl ?? null); } }); }} /></label>{imageUrl && <Image unoptimized src={imageUrl} width={640} height={360} alt="Ảnh câu hỏi" className="mt-3 max-h-48 w-auto rounded-xl object-contain" />}
     {question.type === "MULTIPLE_CHOICE" && <div className="mt-3 space-y-2">{options.map((option, index) => <div key={option.id} className="flex items-center gap-2"><input type="radio" checked={question.answerKey.optionId === option.id} onChange={() => onPatch({ answerKey: { optionId: option.id } })} /><input className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={option.label} onChange={(e) => onPatch({ config: { options: options.map((item, i) => i === index ? { ...item, label: e.target.value } : item) } })} placeholder={`Đáp án ${index + 1}`} /></div>)}</div>}
+    {question.type === "MULTIPLE_CHOICE" && <input className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={String(question.config.speakText ?? "")} onChange={(e) => onPatch({ config: { ...question.config, speakText: e.target.value } })} placeholder="Nội dung máy đọc (để trống nếu không phải câu Listening)" />}
     {question.type === "TRUE_FALSE" && <div className="mt-3 flex gap-4"><label><input type="radio" checked={question.answerKey.value === true} onChange={() => onPatch({ answerKey: { value: true } })} /> Đúng</label><label><input type="radio" checked={question.answerKey.value === false} onChange={() => onPatch({ answerKey: { value: false } })} /> Sai</label></div>}
     {question.type === "FILL_BLANK" && <input className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={((question.answerKey.accepted as string[] | undefined) ?? []).join(", ")} onChange={(e) => onPatch({ answerKey: { accepted: e.target.value.split(",").map((v) => v.trim()), caseSensitive: false } })} placeholder="Đáp án chấp nhận, cách nhau bằng dấu phẩy" />}
     {(question.type === "MATCHING" || question.type === "ORDERING") && <textarea className="mt-3 min-h-24 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" placeholder={question.type === "MATCHING" ? "Mỗi dòng: dog = con chó" : "Mỗi dòng là một mục theo đúng thứ tự"} onChange={(e) => { const lines = e.target.value.split("\n").filter(Boolean); if (question.type === "ORDERING") { const items = lines.map((label, i) => ({ id: String(i), label })); onPatch({ config: { items }, answerKey: { itemIds: items.map((item) => item.id) } }); } else { const pairs = lines.map((line, i) => { const [left, right = ""] = line.split("="); return { left: { id: `l${i}`, label: left.trim() }, right: { id: `r${i}`, label: right.trim() } }; }); onPatch({ config: { left: pairs.map((p) => p.left), right: pairs.map((p) => p.right) }, answerKey: { pairs: pairs.map((p) => ({ leftId: p.left.id, rightId: p.right.id })) } }); } }} />}
-    {question.type === "TEXT_INPUT" && <p className="mt-3 text-sm text-slate-500">Câu này giáo viên sẽ chấm thủ công.</p>}
+    {question.type === "TEXT_INPUT" && <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-slate-700"><input type="checkbox" checked={question.config.responseMode === "AUDIO"} onChange={(e) => onPatch({ config: { ...question.config, responseMode: e.target.checked ? "AUDIO" : "TEXT" } })} /> Học sinh trả lời bằng bản thu âm</label>}
   </article>;
 }
 
