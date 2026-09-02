@@ -12,20 +12,34 @@ type SavedAnswer = { question_id: string; answer: Record<string, unknown>; auto_
 
 export function StudentAssignmentRunner({ assignmentId, title, tasks, questions, submissionId, initialAnswers, submitted, showResults, startedAt, attemptCount }: { assignmentId: string; title: string; tasks: Task[]; questions: Question[]; submissionId: string; initialAnswers: SavedAnswer[]; submitted: boolean; showResults: boolean; startedAt: string; attemptCount: number }) {
   const router = useRouter(); const [pending, startTransition] = useTransition();
+  const draftKey = `englishclass:submission-draft:${submissionId}`;
+  const [draftHydrated, setDraftHydrated] = useState(false);
   const [elapsed, setElapsed] = useState(() => Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)));
   useEffect(() => { if (submitted) return; const timer = window.setInterval(() => setElapsed(Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000))), 1000); return () => window.clearInterval(timer); }, [startedAt, submitted]);
   const [answers, setAnswers] = useState<Record<string, Record<string, unknown>>>(() => Object.fromEntries(initialAnswers.map((item) => [item.question_id, item.answer])));
-  const [saved, setSaved] = useState<Record<string, boolean>>(() => Object.fromEntries(initialAnswers.map((item) => [item.question_id, true]))); const [message, setMessage] = useState(""); const [submitDialog, setSubmitDialog] = useState(false);
-  const save = (questionId: string) => startTransition(async () => { const result = await saveStudentAnswerAction(submissionId, questionId, answers[questionId] ?? {}); setMessage(result.message); if (result.ok) setSaved((current) => ({ ...current, [questionId]: true })); });
+  const [message, setMessage] = useState(""); const [submitDialog, setSubmitDialog] = useState(false);
+  useEffect(() => {
+    if (submitted) { window.localStorage.removeItem(draftKey); return; }
+    const timer = window.setTimeout(() => {
+      try {
+        const localDraft = window.localStorage.getItem(draftKey);
+        if (localDraft) setAnswers((current) => ({ ...current, ...(JSON.parse(localDraft) as Record<string, Record<string, unknown>>) }));
+      } catch { window.localStorage.removeItem(draftKey); }
+      setDraftHydrated(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [draftKey, submitted]);
+  useEffect(() => { if (draftHydrated && !submitted) window.localStorage.setItem(draftKey, JSON.stringify(answers)); }, [answers, draftHydrated, draftKey, submitted]);
   const completeCount = questions.filter((question) => isCompleteAnswer(answers[question.id], question)).length;
+  const canSubmit = questions.length === 6 && completeCount === 6;
   const submit = () => startTransition(async () => {
-    if (completeCount !== questions.length) { setMessage(`Em còn ${questions.length - completeCount} câu chưa hoàn thành.`); setSubmitDialog(false); return; }
-    const unsaved = questions.filter((question) => !saved[question.id] && question.config.responseMode !== "AUDIO");
-    const saveResults = await Promise.all(unsaved.map((question) => saveStudentAnswerAction(submissionId, question.id, answers[question.id] ?? {})));
+    if (!canSubmit) { setMessage(`Em cần hoàn thành đủ 6/6 câu trước khi nộp bài.`); setSubmitDialog(false); return; }
+    const localQuestions = questions.filter((question) => question.config.responseMode !== "AUDIO");
+    const saveResults = await Promise.all(localQuestions.map((question) => saveStudentAnswerAction(submissionId, question.id, answers[question.id] ?? {})));
     if (saveResults.some((result) => !result.ok)) { setMessage("Một số câu chưa lưu được. Em hãy thử lại nhé."); setSubmitDialog(false); return; }
-    const result = await submitAssignmentAction(submissionId); setMessage(result.message); setSubmitDialog(false); if (result.ok) router.push(`/student?submitted=${assignmentId}`);
+    const result = await submitAssignmentAction(submissionId); setMessage(result.message); setSubmitDialog(false); if (result.ok) { window.localStorage.removeItem(draftKey); router.push(`/student?submitted=${assignmentId}`); }
   });
-  const retry = () => startTransition(async () => { const result = await retryAssignmentAction(submissionId); setMessage(result.message); if (result.ok) router.refresh(); });
+  const retry = () => startTransition(async () => { const result = await retryAssignmentAction(submissionId); setMessage(result.message); if (result.ok) { window.localStorage.removeItem(draftKey); router.refresh(); } });
   return <div className="space-y-6">
     {pending && <div className="fixed inset-0 z-[70] grid place-items-center bg-white/60 p-5 backdrop-blur-sm"><div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 font-bold text-teal-800 shadow-xl"><span className="size-5 animate-spin rounded-full border-2 border-teal-200 border-t-teal-700" />Đang lưu bài của em…</div></div>}
     <header className="rounded-3xl bg-gradient-to-br from-teal-600 to-cyan-600 p-6 text-white shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-bold text-teal-50">BÀI TẬP CỦA EM · LẦN {attemptCount}/3</p><h1 className="mt-2 text-3xl font-bold">{title}</h1></div><div className="rounded-2xl border border-white/30 bg-white/15 px-4 py-3 text-center backdrop-blur"><p className="text-xs font-bold text-teal-50">THỜI GIAN</p><p className="mt-1 text-xl font-black tabular-nums">{formatDuration(elapsed)}</p></div></div><div className="mt-4 h-3 overflow-hidden rounded-full bg-white/25"><div className="h-full rounded-full bg-amber-300 transition-all" style={{ width: `${questions.length ? completeCount / questions.length * 100 : 0}%` }} /></div><p className="mt-2 text-sm font-bold text-teal-50">Đã hoàn thành {completeCount}/{questions.length} câu</p></header>
@@ -35,13 +49,13 @@ export function StudentAssignmentRunner({ assignmentId, title, tasks, questions,
         <p className="text-lg font-bold"><span className="mr-2 text-teal-600">Câu {index + 1}</span>{question.prompt}</p>{question.instruction && <p className="mt-1 text-slate-500">{question.instruction}</p>}
         {question.image_url && <Image unoptimized src={question.image_url} width={800} height={450} alt="Minh họa câu hỏi" className="mt-4 max-h-80 w-full rounded-xl object-contain" />}
         {typeof question.config.speakText === "string" && question.config.speakText && <ListenButton text={question.config.speakText} />}
-        <AnswerInput question={question} value={answers[question.id] ?? {}} disabled={submitted} submissionId={submissionId} initialAudioUrl={initialAnswers.find((item) => item.question_id === question.id)?.audio_url ?? null} onChange={(value) => { setAnswers({ ...answers, [question.id]: value }); setSaved({ ...saved, [question.id]: question.config.responseMode === "AUDIO" }); }} />
-        {!submitted && question.config.responseMode !== "AUDIO" && <button disabled={pending || !isCompleteAnswer(answers[question.id] ?? {}, question)} className="mt-4 min-h-12 rounded-xl bg-teal-600 px-5 py-3 font-bold text-white disabled:opacity-50" onClick={() => save(question.id)}>{saved[question.id] ? "✓ Đã lưu" : "Lưu câu trả lời"}</button>}
+        <AnswerInput question={question} value={answers[question.id] ?? {}} disabled={submitted} submissionId={submissionId} initialAudioUrl={initialAnswers.find((item) => item.question_id === question.id)?.audio_url ?? null} onChange={(value) => setAnswers((current) => ({ ...current, [question.id]: value }))} />
+        {!submitted && question.config.responseMode !== "AUDIO" && isCompleteAnswer(answers[question.id], question) && <p className="mt-3 text-sm font-bold text-teal-700">✓ Đã lưu nháp trên thiết bị</p>}
         {submitted && showResults && <Result answer={initialAnswers.find((item) => item.question_id === question.id)} />}
       </article>)}</div>
     </section>)}
     {message && <p className="rounded-xl bg-blue-50 p-4 font-semibold text-blue-800">{message}</p>}
-    {!submitted ? <button disabled={pending} onClick={() => setSubmitDialog(true)} className="min-h-14 w-full rounded-2xl bg-amber-400 px-6 py-4 text-xl font-bold text-slate-900 shadow-md shadow-amber-200 disabled:opacity-50">Nộp bài ({completeCount}/{questions.length})</button> : <div className="rounded-2xl bg-emerald-50 p-5 text-center text-emerald-800"><p className="text-lg font-bold">🎉 Em đã nộp bài thành công!</p><p className="mt-2 text-sm font-semibold">Em có thể xem lại kết quả bên trên.</p>{attemptCount < 3 && <button disabled={pending} onClick={retry} className="mt-4 rounded-xl bg-teal-600 px-5 py-3 font-bold text-white disabled:opacity-50">Làm lại ({3 - attemptCount} lượt còn lại)</button>}</div>}
+    {!submitted ? <div><button disabled={pending || !canSubmit} onClick={() => setSubmitDialog(true)} className="min-h-14 w-full rounded-2xl bg-amber-400 px-6 py-4 text-xl font-bold text-slate-900 shadow-md shadow-amber-200 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none">{canSubmit ? "Nộp bài (6/6)" : `Hoàn thành đủ 6 câu để nộp (${completeCount}/6)`}</button>{!canSubmit && <p className="mt-2 text-center text-sm font-semibold text-slate-500">Câu trả lời đang được lưu nháp trên thiết bị này.</p>}</div> : <div className="rounded-2xl bg-emerald-50 p-5 text-center text-emerald-800"><p className="text-lg font-bold">🎉 Em đã nộp bài thành công!</p><p className="mt-2 text-sm font-semibold">Em có thể xem lại kết quả bên trên.</p>{attemptCount < 3 && <button disabled={pending} onClick={retry} className="mt-4 rounded-xl bg-teal-600 px-5 py-3 font-bold text-white disabled:opacity-50">Làm lại ({3 - attemptCount} lượt còn lại)</button>}</div>}
     {submitDialog && <div className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/35 p-5 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setSubmitDialog(false); }}><div role="dialog" aria-modal="true" className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"><div className="text-4xl">📮</div><h2 className="mt-3 text-2xl font-bold">Em muốn nộp bài?</h2><p className="mt-2 leading-7 text-slate-600">Sau khi nộp, em sẽ không sửa câu trả lời được nữa. Em đã hoàn thành {completeCount}/{questions.length} câu.</p><div className="mt-6 grid grid-cols-2 gap-3"><button onClick={() => setSubmitDialog(false)} className="rounded-xl border border-slate-300 px-4 py-3 font-bold">Kiểm tra lại</button><button onClick={submit} className="rounded-xl bg-teal-600 px-4 py-3 font-bold text-white">Nộp bài</button></div></div></div>}
   </div>;
 }

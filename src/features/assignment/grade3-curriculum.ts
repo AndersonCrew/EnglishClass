@@ -38,8 +38,10 @@ function question(base: Omit<BuilderQuestion, "clientId" | "instruction">): Buil
 }
 
 function buildTasks(seed: LessonSeed, lessonNumber: number): BuilderTask[] {
-  const lessonImage = `/images/grade3/lesson-${String(lessonNumber).padStart(2, "0")}.webp`;
-  const readingImage = `/images/grade3/questions/reading-${String(lessonNumber).padStart(2, "0")}.webp`;
+  const lessonCode = String(lessonNumber).padStart(2, "0");
+  const readingImage = `/images/grade3/questions/reading-${lessonCode}.webp`;
+  const writingImage = (questionNumber: number) => `/images/grade3/questions/writing-${lessonCode}-${String(questionNumber).padStart(2, "0")}.webp`;
+  const speakingImage = (questionNumber: number) => `/images/grade3/questions/speaking-${lessonCode}-${String(questionNumber).padStart(2, "0")}.webp`;
   const options = seed.listenOptions.map((label, index) => ({ id: `o${index + 1}`, label }));
   const shuffledWords = seed.orderWords.map((label, index) => ({ id: `w${index + 1}`, label }));
   const answerIds = seed.orderAnswer.map((word) => shuffledWords.find((item) => item.label === word)?.id).filter((value): value is string => Boolean(value));
@@ -51,11 +53,11 @@ function buildTasks(seed: LessonSeed, lessonNumber: number): BuilderTask[] {
       question({ type: "TRUE_FALSE", prompt: seed.readingStatement, imagePath: readingImage, points: 2, config: {}, answerKey: { value: seed.readingAnswer } }),
     ] },
     { clientId: crypto.randomUUID(), skill: "WRITING", title: "Writing · Viết câu", instruction: "Hoàn thành câu và sắp xếp từ theo đúng thứ tự.", category: "Grammar", questions: [
-      question({ type: "FILL_BLANK", prompt: seed.writingPrompt, imagePath: lessonImage, points: 1, config: {}, answerKey: { accepted: seed.writingAccepted, caseSensitive: false } }),
-      question({ type: "ORDERING", prompt: "Sắp xếp các từ để tạo thành câu đúng.", imagePath: null, points: 1, config: { items: shuffledWords }, answerKey: { itemIds: answerIds } }),
+      question({ type: "FILL_BLANK", prompt: seed.writingPrompt, imagePath: writingImage(1), points: 1, config: {}, answerKey: { accepted: seed.writingAccepted, caseSensitive: false } }),
+      question({ type: "ORDERING", prompt: "Sắp xếp các từ để tạo thành câu đúng.", imagePath: writingImage(2), points: 1, config: { items: shuffledWords }, answerKey: { itemIds: answerIds } }),
     ] },
-    { clientId: crypto.randomUUID(), skill: "SPEAKING", title: "Speaking · Em hãy nói", instruction: "Bấm thu âm và trả lời bằng câu đầy đủ.", category: "Speaking practice", questions: seed.speakingQuestions.map((prompt) =>
-      question({ type: "TEXT_INPUT", prompt, imagePath: lessonImage, points: 2, config: { responseMode: "AUDIO" }, answerKey: {} })
+    { clientId: crypto.randomUUID(), skill: "SPEAKING", title: "Speaking · Em hãy nói", instruction: "Bấm thu âm và trả lời bằng câu đầy đủ.", category: "Speaking practice", questions: seed.speakingQuestions.map((prompt, index) =>
+      question({ type: "TEXT_INPUT", prompt, imagePath: speakingImage(index + 1), points: 2, config: { responseMode: "AUDIO" }, answerKey: {} })
     ) },
   ];
 }
