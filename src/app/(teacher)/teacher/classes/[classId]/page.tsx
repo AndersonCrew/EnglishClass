@@ -2,7 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { getTeacherAssignments } from "@/features/assignment/server/queries";
+import { Leaderboard } from "@/features/assignment/components/leaderboard";
+import { getClassLeaderboard, getTeacherAssignments } from "@/features/assignment/server/queries";
 import { StudentManager } from "@/features/students/components/student-manager";
 import { getClassroomStudents } from "@/features/students/server/student-service";
 
@@ -10,9 +11,10 @@ interface Props { params: Promise<{ classId: string }> }
 
 export default async function ClassroomDetailPage({ params }: Props) {
   const { classId } = await params;
-  const [studentData, learningData] = await Promise.all([
+  const [studentData, learningData, leaderboard] = await Promise.all([
     getClassroomStudents(classId),
     getTeacherAssignments(classId),
+    getClassLeaderboard(classId),
   ]);
   if (!studentData || !learningData) notFound();
 
@@ -43,6 +45,8 @@ export default async function ClassroomDetailPage({ params }: Props) {
         <StudentManager classroomId={studentData.classroom.id} classroomName={studentData.classroom.name} initialStudents={studentData.students} />
       </div>
     </details>
+
+    <div className="mt-8"><Leaderboard title={`Xếp hạng lớp ${studentData.classroom.name}`} subtitle="Ưu tiên tổng điểm; nếu bằng điểm, học sinh làm nhanh hơn xếp trên." rows={leaderboard} /></div>
 
     <section className="mt-8">
       <div className="flex items-end justify-between gap-4">

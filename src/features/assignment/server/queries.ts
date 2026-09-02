@@ -80,7 +80,7 @@ export async function getStudentAssignment(assignmentId: string) {
     const { data } = await supabase.storage.from("question-media").createSignedUrl(question.image_path, 60 * 15);
     return { ...question, image_url: data?.signedUrl ?? null };
   }));
-  const { data: submission } = await supabase.from("submissions").select("id,status,submitted_at,auto_score,teacher_score,teacher_feedback").eq("assignment_id", assignmentId).eq("student_id", profile.id).maybeSingle();
+  const { data: submission } = await supabase.from("submissions").select("id,status,submitted_at,auto_score,teacher_score,teacher_feedback,assessed_at,attempt_count,started_at,duration_seconds,best_score,best_duration_seconds").eq("assignment_id", assignmentId).eq("student_id", profile.id).maybeSingle();
   let submissionId = submission?.id;
   if (!submissionId) {
     const { data } = await supabase.rpc("start_assignment_submission", { target_assignment_id: assignmentId });
@@ -93,7 +93,7 @@ export async function getStudentAssignment(assignmentId: string) {
     const { data: signed } = await supabase.storage.from("speaking-submissions").createSignedUrl(audioPath, 60 * 15);
     return { ...answer, audio_url: signed?.signedUrl ?? null };
   }));
-  return { assignment, tasks: tasks ?? [], questions, submission: submission ? { ...submission, id: submissionId! } : { id: submissionId!, status: "DRAFT" as const, submitted_at: null, auto_score: null, teacher_score: null, teacher_feedback: null }, answers };
+  return { assignment, tasks: tasks ?? [], questions, submission: submission ? { ...submission, id: submissionId! } : { id: submissionId!, status: "DRAFT" as const, submitted_at: null, auto_score: null, teacher_score: null, teacher_feedback: null, assessed_at: null, attempt_count: 1, started_at: new Date().toISOString(), duration_seconds: null, best_score: null, best_duration_seconds: null }, answers };
 }
 
 export async function getTeacherAssignmentResults(assignmentId: string) {
@@ -119,7 +119,7 @@ export async function getTeacherAssignmentResults(assignmentId: string) {
 export async function getTeacherSubmissionResult(submissionId: string) {
   await requireRole("TEACHER");
   const supabase = await createClient();
-  const { data: submission } = await supabase.from("submissions").select("id,assignment_id,student_id,status,submitted_at,auto_score").eq("id", submissionId).maybeSingle();
+  const { data: submission } = await supabase.from("submissions").select("id,assignment_id,student_id,status,submitted_at,auto_score,teacher_score,teacher_feedback,assessed_at,attempt_count,duration_seconds,best_score").eq("id", submissionId).maybeSingle();
   if (!submission) return null;
   const [{ data: assignment }, { data: student }, { data: answers }] = await Promise.all([
     supabase.from("assignments").select("id,title,classroom_id").eq("id", submission.assignment_id).single(),
@@ -128,16 +128,43 @@ export async function getTeacherSubmissionResult(submissionId: string) {
   ]);
   if (!assignment || !student) return null;
   const questionIds = (answers ?? []).map((answer) => answer.question_id);
-  const { data: questions } = questionIds.length ? await supabase.from("questions").select("id,task_id,prompt,type,points,config").in("id", questionIds) : { data: [] };
+  const [{ data: questions }, { data: answerKeys }] = questionIds.length ? await Promise.all([
+    supabase.from("questions").select("id,task_id,prompt,type,points,config").in("id", questionIds),
+    supabase.from("question_answer_keys").select("question_id,answer_key").in("question_id", questionIds),
+  ]) : [{ data: [] }, { data: [] }];
   const taskIds = [...new Set((questions ?? []).map((item) => item.task_id))];
   const { data: tasks } = taskIds.length ? await supabase.from("tasks").select("id,skill,title,order_index").in("id", taskIds) : { data: [] };
   const taskMap = new Map((tasks ?? []).map((task) => [task.id, task]));
   const questionMap = new Map((questions ?? []).map((question) => [question.id, question]));
+  const answerKeyMap = new Map((answerKeys ?? []).map((item) => [item.question_id, item.answer_key]));
   const enrichedAnswers = await Promise.all((answers ?? []).map(async (answer) => {
     const question = questionMap.get(answer.question_id); if (!question) return null;
     const audioPath = typeof answer.answer.audioPath === "string" ? answer.answer.audioPath : null;
     const { data: signed } = audioPath ? await supabase.storage.from("speaking-submissions").createSignedUrl(audioPath, 60 * 30) : { data: null };
-    return { ...answer, question: { ...question, task: taskMap.get(question.task_id) }, audio_url: signed?.signedUrl ?? null };
+    return { ...answer, question: { ...question, task: taskMap.get(question.task_id), answer_key: answerKeyMap.get(question.id) ?? {} }, audio_url: signed?.signedUrl ?? null };
   }));
   return { assignment, student, submission, answers: enrichedAnswers.filter((answer): answer is NonNullable<typeof answer> => answer !== null) };
+}
+
+export async function getClassLeaderboard(classroomId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_class_leaderboard", { target_classroom_id: classroomId });
+  if (error) throw new Error(`Không thể tải bảng xếp hạng lớp [${error.code}].`);
+  return data ?? [];
+}
+
+export async function getStudentLeaderboards() {
+  const profile = await requireRole("STUDENT");
+  const supabase = await createClient();
+  const { data: memberships } = await supabase.from("class_members").select("classroom_id").eq("student_id", profile.id).eq("status", "ACTIVE");
+  const classroomIds = (memberships ?? []).map((item) => item.classroom_id);
+  if (!classroomIds.length) return { currentStudentId: profile.id, classroom: null, classRows: [], gradeRows: [] };
+  const { data: classrooms } = await supabase.from("classrooms").select("id,name,grade_level").in("id", classroomIds).order("name");
+  const classroom = classrooms?.[0] ?? null;
+  if (!classroom) return { currentStudentId: profile.id, classroom: null, classRows: [], gradeRows: [] };
+  const [{ data: classRows }, { data: gradeRows }] = await Promise.all([
+    supabase.rpc("get_class_leaderboard", { target_classroom_id: classroom.id }),
+    supabase.rpc("get_grade_leaderboard", { target_grade: classroom.grade_level }),
+  ]);
+  return { currentStudentId: profile.id, classroom, classRows: classRows ?? [], gradeRows: gradeRows ?? [] };
 }

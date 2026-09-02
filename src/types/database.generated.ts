@@ -46,7 +46,7 @@ type AssignmentRow = { id: string; classroom_id: string; title: string; descript
 type TaskRow = { id: string; assignment_id: string; skill: SkillType; title: string; instruction: string | null; content: Record<string, unknown>; category: string | null; order_index: number; created_at: string; updated_at: string };
 type QuestionRow = { id: string; task_id: string; type: QuestionType; prompt: string; instruction: string | null; image_path: string | null; config: Record<string, unknown>; points: number; order_index: number; created_at: string; updated_at: string };
 type AnswerKeyRow = { question_id: string; answer_key: Record<string, unknown>; created_at: string; updated_at: string };
-type SubmissionRow = { id: string; task_id: string | null; assignment_id: string; student_id: string; answer_text: string | null; answer_file_path: string | null; answer_metadata: Record<string, unknown>; status: "DRAFT" | "SUBMITTED"; submitted_at: string | null; auto_score: number | null; teacher_score: number | null; teacher_feedback: string | null; assessed_at: string | null; assessed_by: string | null; created_at: string; updated_at: string };
+type SubmissionRow = { id: string; task_id: string | null; assignment_id: string; student_id: string; answer_text: string | null; answer_file_path: string | null; answer_metadata: Record<string, unknown>; status: "DRAFT" | "SUBMITTED"; submitted_at: string | null; auto_score: number | null; teacher_score: number | null; teacher_feedback: string | null; assessed_at: string | null; assessed_by: string | null; attempt_count: number; started_at: string; duration_seconds: number | null; best_score: number | null; best_duration_seconds: number | null; created_at: string; updated_at: string };
 type StudentAnswerRow = { id: string; submission_id: string; question_id: string; answer: Record<string, unknown>; auto_score: number | null; is_correct: boolean | null; teacher_score: number | null; teacher_feedback: string | null; created_at: string; updated_at: string };
 type AuditLogRow = { id: string; actor_user_id: string | null; actor_role: UserRole; action: string; target_type: string; target_id: string | null; metadata: Record<string, unknown>; created_at: string };
 
@@ -102,6 +102,10 @@ export interface Database {
       provision_curriculum_assignment: { Args: { target_classroom_id: string; lesson_code: string; lesson_title: string; lesson_description: string; lesson_level: number; lesson_sequence: number; lesson_tasks: Record<string, unknown>[] }; Returns: string };
       open_assignment_until: { Args: { target_assignment_id: string; close_time: string }; Returns: undefined };
       student_can_work_assignment: { Args: { target_id: string }; Returns: boolean };
+      retry_assignment: { Args: { target_submission_id: string }; Returns: undefined };
+      assess_speaking_submission: { Args: { target_submission_id: string; score_value: number; feedback_value: string }; Returns: undefined };
+      get_class_leaderboard: { Args: { target_classroom_id: string }; Returns: LeaderboardRow[] };
+      get_grade_leaderboard: { Args: { target_grade: number }; Returns: LeaderboardRow[] };
       get_teacher_dashboard: { Args: Record<string, never>; Returns: Record<string, unknown> };
     };
     Enums: {
@@ -115,3 +119,5 @@ export interface Database {
     CompositeTypes: Record<string, never>;
   };
 }
+
+export type LeaderboardRow = { rank: number; student_id: string; student_name: string; completed: number; total_score: number; total_seconds: number };

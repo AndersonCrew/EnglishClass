@@ -138,3 +138,24 @@ export async function assessAnswerAction(answerId: string, score: number, feedba
   const { error } = await supabase.rpc("assess_student_answer", { target_answer_id: answerId, score_value: score, feedback_value: feedback });
   return error ? { ok: false, message: "Không thể lưu đánh giá." } : { ok: true, message: "Đã lưu đánh giá." };
 }
+
+export async function assessSpeakingSubmissionAction(submissionId: string, score: number, feedback: string): Promise<ActionResult> {
+  await requireRole("TEACHER");
+  if (!Number.isFinite(score) || score < 1 || score > 10) return { ok: false, message: "Điểm Speaking phải từ 1 đến 10." };
+  if (feedback.trim().length === 0 || feedback.length > 2000) return { ok: false, message: "Hãy nhập nhận xét ngắn cho học sinh." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("assess_speaking_submission", { target_submission_id: submissionId, score_value: score, feedback_value: feedback });
+  if (error) return { ok: false, message: `Không thể lưu kết quả [${error.code}].` };
+  revalidatePath(`/teacher/submissions/${submissionId}`);
+  revalidatePath("/teacher");
+  return { ok: true, message: "Đã lưu kết quả Speaking và cập nhật bảng xếp hạng." };
+}
+
+export async function retryAssignmentAction(submissionId: string): Promise<ActionResult> {
+  await requireRole("STUDENT");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("retry_assignment", { target_submission_id: submissionId });
+  if (error) return { ok: false, message: "Em chỉ được làm tối đa 3 lần và bài phải còn thời gian." };
+  revalidatePath("/student");
+  return { ok: true, message: "Đã bắt đầu lượt làm mới." };
+}

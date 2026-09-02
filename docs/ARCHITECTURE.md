@@ -159,6 +159,14 @@ Index: `(classroom_id, status, due_at)`.
 - `created_at`, `updated_at`
 - `unique (task_id, student_id)`
 
+Phần bài tập theo assignment mở rộng submission với `attempt_count` (tối đa 3),
+`started_at`, `duration_seconds`, `best_score` và `best_duration_seconds`. Học sinh
+vẫn chỉ có một submission cho mỗi assignment; khi làm lại, câu trả lời của lượt
+hiện tại được làm sạch nhưng thành tích tốt nhất được giữ để xếp hạng. Điểm là
+tiêu chí chính, thời gian chỉ dùng phá hòa. Việc bắt đầu lượt mới, chốt thời gian,
+chấm Speaking và đọc leaderboard đều đi qua RPC `security definer` có kiểm tra
+quyền theo session; frontend không được tự ghi các trường thành tích.
+
 Ba trường answer hỗ trợ text, file/audio và metadata có cấu trúc mà không cần tách bảng theo kỹ năng. Database trigger kiểm tra student là thành viên của classroom chứa task, ép actor đăng nhập thành `student_id`, tự quản lý `submitted_at`, và không cho đổi `task_id`/`student_id` sau khi tạo.
 
 Index: `(student_id, status)`, `(task_id, status)`.
