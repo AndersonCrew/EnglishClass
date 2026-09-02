@@ -108,12 +108,15 @@ export async function getTeacherAssignmentResults(assignmentId: string) {
   const studentIds = (members ?? []).map((item) => item.student_id);
   const [{ data: profiles }, { data: tasks }] = await Promise.all([
     studentIds.length ? supabase.from("profiles").select("id,full_name").in("id", studentIds).order("full_name") : Promise.resolve({ data: [] }),
-    supabase.from("tasks").select("id").eq("assignment_id", assignmentId),
+    supabase.from("tasks").select("id,skill").eq("assignment_id", assignmentId),
   ]);
   const taskIds = (tasks ?? []).map((item) => item.id);
-  const { data: questions } = taskIds.length ? await supabase.from("questions").select("points").in("task_id", taskIds) : { data: [] };
+  const { data: questions } = taskIds.length ? await supabase.from("questions").select("task_id,points").in("task_id", taskIds) : { data: [] };
+  const taskSkill = new Map((tasks ?? []).map((task) => [task.id, task.skill]));
+  const objectiveMax = (questions ?? []).filter((question) => taskSkill.get(question.task_id) !== "SPEAKING").reduce((sum, question) => sum + question.points, 0);
+  const speakingMax = (tasks ?? []).some((task) => task.skill === "SPEAKING") ? 10 : 0;
   const submissionMap = new Map((submissions ?? []).map((item) => [item.student_id, item]));
-  return { assignment, maxScore: (questions ?? []).reduce((sum, item) => sum + item.points, 0), students: (profiles ?? []).map((student) => ({ student, submission: submissionMap.get(student.id) ?? null })) };
+  return { assignment, maxScore: objectiveMax + speakingMax, students: (profiles ?? []).map((student) => ({ student, submission: submissionMap.get(student.id) ?? null })) };
 }
 
 export async function getTeacherSubmissionResult(submissionId: string) {
@@ -129,7 +132,7 @@ export async function getTeacherSubmissionResult(submissionId: string) {
   if (!assignment || !student) return null;
   const questionIds = (answers ?? []).map((answer) => answer.question_id);
   const [{ data: questions }, { data: answerKeys }] = questionIds.length ? await Promise.all([
-    supabase.from("questions").select("id,task_id,prompt,type,points,config").in("id", questionIds),
+    supabase.from("questions").select("id,task_id,prompt,type,points,config,image_path,order_index").in("id", questionIds),
     supabase.from("question_answer_keys").select("question_id,answer_key").in("question_id", questionIds),
   ]) : [{ data: [] }, { data: [] }];
   const taskIds = [...new Set((questions ?? []).map((item) => item.task_id))];
@@ -140,10 +143,14 @@ export async function getTeacherSubmissionResult(submissionId: string) {
   const enrichedAnswers = await Promise.all((answers ?? []).map(async (answer) => {
     const question = questionMap.get(answer.question_id); if (!question) return null;
     const audioPath = typeof answer.answer.audioPath === "string" ? answer.answer.audioPath : null;
-    const { data: signed } = audioPath ? await supabase.storage.from("speaking-submissions").createSignedUrl(audioPath, 60 * 30) : { data: null };
-    return { ...answer, question: { ...question, task: taskMap.get(question.task_id), answer_key: answerKeyMap.get(question.id) ?? {} }, audio_url: signed?.signedUrl ?? null };
+    const [{ data: signedAudio }, { data: signedImage }] = await Promise.all([
+      audioPath ? supabase.storage.from("speaking-submissions").createSignedUrl(audioPath, 60 * 30) : Promise.resolve({ data: null }),
+      question.image_path && !question.image_path.startsWith("/") ? supabase.storage.from("question-media").createSignedUrl(question.image_path, 60 * 30) : Promise.resolve({ data: null }),
+    ]);
+    return { ...answer, question: { ...question, task: taskMap.get(question.task_id), answer_key: answerKeyMap.get(question.id) ?? {}, image_url: question.image_path?.startsWith("/") ? question.image_path : signedImage?.signedUrl ?? null }, audio_url: signedAudio?.signedUrl ?? null };
   }));
-  return { assignment, student, submission, answers: enrichedAnswers.filter((answer): answer is NonNullable<typeof answer> => answer !== null) };
+  const sortedAnswers = enrichedAnswers.filter((answer): answer is NonNullable<typeof answer> => answer !== null).sort((left, right) => (left.question.task?.order_index ?? 0) - (right.question.task?.order_index ?? 0) || left.question.order_index - right.question.order_index);
+  return { assignment, student, submission, answers: sortedAnswers };
 }
 
 export async function getClassLeaderboard(classroomId: string) {

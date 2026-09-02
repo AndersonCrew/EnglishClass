@@ -133,10 +133,13 @@ export async function submitAssignmentAction(submissionId: string): Promise<Acti
 
 export async function assessAnswerAction(answerId: string, score: number, feedback: string): Promise<ActionResult> {
   await requireRole("TEACHER");
-  if (!Number.isFinite(score) || score < 0 || score > 10 || feedback.length > 2000) return { ok: false, message: "Điểm phải nằm trong khoảng từ 0 đến 10." };
+  if (!Number.isFinite(score) || score < 1 || score > 10) return { ok: false, message: "Điểm từng câu Speaking phải từ 1 đến 10." };
+  if (feedback.trim().length === 0 || feedback.length > 2000) return { ok: false, message: "Hãy nhập nhận xét cho từng câu Speaking." };
   const supabase = await createClient();
   const { error } = await supabase.rpc("assess_student_answer", { target_answer_id: answerId, score_value: score, feedback_value: feedback });
-  return error ? { ok: false, message: "Không thể lưu đánh giá." } : { ok: true, message: "Đã lưu đánh giá." };
+  if (error) return { ok: false, message: `Không thể lưu đánh giá [${error.code}].` };
+  revalidatePath("/teacher");
+  return { ok: true, message: "Đã lưu điểm từng câu Speaking." };
 }
 
 export async function assessSpeakingSubmissionAction(submissionId: string, score: number, feedback: string): Promise<ActionResult> {
